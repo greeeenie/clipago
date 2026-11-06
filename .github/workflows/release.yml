@@ -1,0 +1,80 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: clipago-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate release version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -Raw tauri.conf.json | ConvertFrom-Json).version
+          $nodeVersion = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $rustVersion = [regex]::Match((Get-Content -Raw Cargo.toml), '(?m)^version = "([^"]+)"').Groups[1].Value
+          if ($version -notmatch '^\d+\.\d+\.\d+$' -or $version -ne $nodeVersion -or $version -ne $rustVersion) {
+            throw 'The app versions must match in tauri.conf.json, package.json and Cargo.toml'
+          }
+          $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne $tag) {
+            throw "Expected tag $tag"
+          }
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -and $env:GITHUB_REF_NAME -ne 'main') {
+            throw 'Dispatch releases from main'
+          }
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "tag=$tag"
+          $existing = gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --json tagName,isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read existing releases' }
+          $published = @($existing | Where-Object { $_.tagName -eq $tag -and !$_.isDraft }).Count -gt 0
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "published=$($published.ToString().ToLowerInvariant())"
+      - name: Install dependencies
+        if: steps.version.outputs.published == 'false'
+        run: npm ci
+      - name: Check frontend
+        if: steps.version.outputs.published == 'false'
+        run: npm test
+      - name: Build signed installer
+        if: steps.version.outputs.published == 'false'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri -- build --ci --bundles nsis -- --locked
+      - name: Publish release and update manifest
+        if: steps.version.outputs.published == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLIPAGO_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $files = @(./scripts/release-assets.ps1 -Repository $env:GITHUB_REPOSITORY)
+          $draft = gh release view $env:CLIPAGO_TAG --repo $env:GITHUB_REPOSITORY --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (!(($draft | ConvertFrom-Json).isDraft)) { throw 'Release is already published' }
+            gh release upload $env:CLIPAGO_TAG @files --repo $env:GITHUB_REPOSITORY --clobber
+          } else {
+            gh release create $env:CLIPAGO_TAG @files --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --generate-notes --title "Clipago $env:CLIPAGO_TAG"
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed' }
+          gh release edit $env:CLIPAGO_TAG --repo $env:GITHUB_REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

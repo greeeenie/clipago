@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Clipago",
+  "version": "0.3.0",
+  "identifier": "app.rewind.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "web-dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Clipago",
+        "width": 1280,
+        "height": 780,
+        "minWidth": 920,
+        "minHeight": 700,
+        "center": true,
+        "decorations": false,
+        "visible": false,
+        "backgroundColor": "#0D0F11"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; media-src 'self' asset: http://asset.localhost blob:; connect-src ipc: http://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/clipago/32x32.png",
+      "icons/clipago/128x128.png",
+      "icons/clipago/icon.ico"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "mainBinaryName": "Clipago",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVEMkY1MjNEQ0Q5REYyNTAKUldSUThwM05QVkl2N1J0d20vT09pLzVFbFl0ZnJFbjZ6Z0lNNGJaV0NxVUpJd2VLbElCRVk5MEQK",
+      "endpoints": [
+        "https://github.com/greeeenie/clipago/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
