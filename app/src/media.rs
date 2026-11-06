@@ -30,6 +30,7 @@ pub fn tool(configured: &str) -> PathBuf {
         for dir in [
             exe.parent().unwrap().to_path_buf(),
             exe.parent().unwrap().join("bin"),
+            exe.parent().unwrap().join("bin/ffmpeg"),
         ] {
             let path = dir.join(format!("{}.exe", configured.trim_end_matches(".exe")));
             if path.exists() {
