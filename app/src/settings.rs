@@ -28,8 +28,8 @@ impl Encoder {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ReplayShortcut {
-    #[default]
     CtrlShiftS,
+    #[default]
     AltF10,
     CtrlAltS,
 }
