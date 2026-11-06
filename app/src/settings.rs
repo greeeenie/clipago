@@ -26,22 +26,39 @@ impl Encoder {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ReplayShortcut {
     CtrlShiftS,
     #[default]
     AltF10,
     CtrlAltS,
+    #[serde(untagged)]
+    Custom(String),
 }
 
 impl ReplayShortcut {
-    pub const ALL: [Self; 3] = [Self::CtrlShiftS, Self::AltF10, Self::CtrlAltS];
-    pub fn label(self) -> &'static str {
+    pub fn code(&self) -> &str {
         match self {
-            Self::CtrlShiftS => "Ctrl + Shift + S",
-            Self::AltF10 => "Alt + F10",
-            Self::CtrlAltS => "Ctrl + Alt + S",
+            Self::CtrlShiftS => "Ctrl+Shift+KeyS",
+            Self::AltF10 => "Alt+F10",
+            Self::CtrlAltS => "Ctrl+Alt+KeyS",
+            Self::Custom(code) => code,
         }
+    }
+
+    pub fn label(&self) -> String {
+        self.code()
+            .split('+')
+            .map(|part| match part {
+                "Meta" => "Win",
+                "Space" => "Пробел",
+                key => key
+                    .strip_prefix("Key")
+                    .or_else(|| key.strip_prefix("Digit"))
+                    .unwrap_or(key),
+            })
+            .collect::<Vec<_>>()
+            .join(" + ")
     }
 }
 

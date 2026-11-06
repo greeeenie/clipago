@@ -1,7 +1,7 @@
 import {invoke, convertFileSrc} from '@tauri-apps/api/core';
 export type Encoder='Auto'|'Nvidia'|'Intel'|'Amd'|'Cpu';
 export type EditorHotkeys={split:string;duplicate:string;delete:string;snapping:string;inspector:string;export:string;undo:string;redo:string;play:string;zoom_in:string;zoom_out:string};
-export type Settings={buffer_seconds:number;fps:number;monitor:number;encoder:Encoder;output_dir:string;ffmpeg:string;ffprobe:string;shortcut:'CtrlShiftS'|'AltF10'|'CtrlAltS';system_audio:boolean;editor_hotkeys?:EditorHotkeys};
+export type Settings={buffer_seconds:number;fps:number;monitor:number;encoder:Encoder;output_dir:string;ffmpeg:string;ffprobe:string;shortcut:string;system_audio:boolean;editor_hotkeys?:EditorHotkeys};
 export type Clip={path:string;duration:number;width:number;height:number;bytes:number;has_audio:boolean;audio_tracks:{index:number;name:string}[];audio_mix_index:number|null;source:string|null;fps:number;aspect_ratio:number;original_path:string|null;viewed:boolean;is_movie:boolean};
 export type Snapshot={profile_id?:string;settings:Settings;recording:boolean;transitioning:boolean;replay_status?:'stopped'|'warming'|'ready'|'saving';encoders:Encoder[];monitors:{index:number;name:string}[];error:string|null;quick:Clip|null};
 export type Format='Mp4'|'Mkv'|'Webm'|'Gif';

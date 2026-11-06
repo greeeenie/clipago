@@ -312,7 +312,7 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
             let _ = wake_tx.send(());
         });
         let recorder = Recorder::new(wake.clone());
-        let hotkey = Hotkey::new(settings.shortcut, wake);
+        let hotkey = Hotkey::new(settings.shortcut.clone(), wake);
         let mut desired_recording = false;
         let mut saving = false;
         let mut buffered = 0.0;
@@ -356,18 +356,21 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                         drop(state);
                         publish_state(&worker_engine, &handle);
                     }
-                    Action::Configure(next) => {
+                    Action::Configure(mut next) => {
                         let mut state = worker_engine.0.state.lock().unwrap();
                         let previous = state.settings.clone();
                         let restart = previous.fps != next.fps
                             || previous.monitor != next.monitor
                             || previous.encoder != next.encoder
                             || previous.ffmpeg != next.ffmpeg;
+                        if previous.shortcut != next.shortcut
+                            && let Err(message) = hotkey.rebind(next.shortcut.clone())
+                        {
+                            next.shortcut = previous.shortcut.clone();
+                            state.error = Some(message);
+                        }
                         match next.save() {
                             Ok(()) => {
-                                if previous.shortcut != next.shortcut {
-                                    hotkey.rebind(next.shortcut);
-                                }
                                 state.settings = next.clone();
                                 if desired_recording {
                                     if restart {
@@ -389,7 +392,13 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                                 }
                             }
                             Err(e) => {
-                                state.error = Some(error(e));
+                                let rollback_error = (previous.shortcut != next.shortcut)
+                                    .then(|| hotkey.rebind(previous.shortcut).err())
+                                    .flatten();
+                                state.error = Some(match rollback_error {
+                                    Some(message) => format!("{} {message}", error(e)),
+                                    None => error(e),
+                                });
                             }
                         }
                         drop(state);
@@ -405,12 +414,8 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                         saving = true;
                         let _ = recorder.tx.send(recorder::Request::Save);
                     }
-                    crate::hotkey::Event::Failed { message, fallback } => {
+                    crate::hotkey::Event::Failed(message) => {
                         let mut state = worker_engine.0.state.lock().unwrap();
-                        if let Some(previous) = fallback {
-                            state.settings.shortcut = previous;
-                            let _ = state.settings.save();
-                        }
                         state.error = Some(message);
                         drop(state);
                         publish_state(&worker_engine, &handle);
