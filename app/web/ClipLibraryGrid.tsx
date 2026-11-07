@@ -1,13 +1,16 @@
 import {useLayoutEffect,useRef,useState,type RefObject} from 'react';
 import {Dialog} from 'radix-ui';
 import {Check,Film,FolderOpen,Plus,Video,X,Zap} from 'lucide-react';
-import {api,filename,time,type Clip,type Snapshot} from './api';
+import {api,clipTitle,time,type Clip,type Snapshot} from './api';
 import {clipGroups} from './projectState';
 import {Thumbnail,IconButton} from './components';
 
 export function libraryItems(clips:Clip[]){return [...clipGroups(clips).map(g=>({key:g.path,clip:g.raw??g.edited[0],versions:[...(g.raw?[g.raw]:[]),...g.edited]})),...clips.filter(c=>c.is_movie).map(clip=>({key:clip.path,clip,versions:[clip]}))];}
 function Cards({clips,onOpen,picking=false,chosen=[],onToggle}:{clips:Clip[];onOpen?:(c:Clip)=>void;picking?:boolean;chosen?:string[];onToggle?:(path:string)=>void}){
- return <div className="library-grid">{libraryItems(clips).map(({key,clip,versions})=><button key={key} className={`media-card ${chosen.includes(clip.path)?'chosen':''}`} aria-pressed={picking?chosen.includes(clip.path):undefined} aria-label={picking?`Выбрать ${filename(clip.path)}`:`Открыть ${filename(clip.path)}`} onClick={()=>picking?onToggle?.(clip.path):onOpen?.(clip)}><div className="media-cover"><Thumbnail clip={clip} seconds={Math.min(2,clip.duration*.2)}/><span className="duration">{time(clip.duration)}</span>{!clip.viewed&&!clip.is_movie&&<span className="unread-dot" aria-label="Не просмотрен"/>}{picking&&<span className="pick-check">{chosen.includes(clip.path)&&<Check size={14}/>}</span>}</div><span className="media-caption"><span title={filename(clip.path)}>{clip.source??filename(clip.path)}</span>{versions.length>1&&<span className="version-count" title={`${versions.length} версии`}>{versions.length}</span>}</span></button>)}</div>;
+ return <div className="library-grid">{libraryItems(clips).map(({key,clip,versions})=>{
+  const title=clipTitle(clip);
+  return <button key={key} className={`media-card ${chosen.includes(clip.path)?'chosen':''}`} aria-pressed={picking?chosen.includes(clip.path):undefined} aria-label={picking?`Выбрать ${title}`:`Открыть ${title}`} onClick={()=>picking?onToggle?.(clip.path):onOpen?.(clip)}><div className="media-cover"><Thumbnail clip={clip} seconds={Math.min(2,clip.duration*.2)}/><span className="duration">{time(clip.duration)}</span>{!clip.viewed&&!clip.is_movie&&<span className="unread-dot" aria-label="Не просмотрен"/>}{picking&&<span className="pick-check">{chosen.includes(clip.path)&&<Check size={14}/>}</span>}</div><span className="media-caption"><span title={title}>{title}</span>{versions.length>1&&<span className="version-count" title={`${versions.length} версии`}>{versions.length}</span>}</span></button>;
+ })}</div>;
 }
 export function ClipLibraryGrid({clips,onOpen,onImport,onCapture,onError,state,scrollPosition}:{clips:Clip[];onOpen:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
  const host=useRef<HTMLDivElement>(null);useLayoutEffect(()=>{if(host.current)host.current.scrollTop=scrollPosition.current;},[scrollPosition]);

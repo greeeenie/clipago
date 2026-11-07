@@ -3,7 +3,7 @@ import {Tabs,Tooltip} from 'radix-ui';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
 import {ArrowLeft,LoaderCircle,Minus,Settings,Square,X} from 'lucide-react';
-import {api,filename,defaultConfig,type Clip,type Snapshot,type ExportConfig,type MovieProject} from './api';
+import {api,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type MovieProject} from './api';
 import {IconButton,SaveAction} from './components';
 import {Editor} from './Editor';
 import type {Selection} from './Timeline';
@@ -16,13 +16,6 @@ import {useAppUpdates} from './useAppUpdates';
 import './style.css';
 
 const window=getCurrentWindow();const quick=new URLSearchParams(location.search).has('quick');
-function quickClipLabel(clip:Clip){
- const name=filename(clip.path);
- const stamp=/^Replay_\d{4}-\d{2}-\d{2}_(\d{2})-(\d{2})-(\d{2})-/.exec(name);
- if(!stamp)return name;
- const time=stamp.slice(1).join(':');
- return clip.source?`${time} · ${clip.source}`:time;
-}
 function Titlebar({tab,busy,onTab,onSettings,updateAvailable}:{tab:'clips'|'movie';busy:boolean;onTab:(tab:'clips'|'movie')=>void;onSettings:()=>void;updateAvailable:boolean}){
  return <header className={`titlebar ${quick?'quick-titlebar':''}`}>{quick?<span className="quick-window-title">Быстрый клип</span>:<nav className="workspace-tabs" role="tablist" aria-label="Рабочее пространство"><button role="tab" disabled={busy} aria-selected={tab==='clips'} onClick={()=>onTab('clips')}>Клипы</button><button role="tab" disabled={busy} aria-selected={tab==='movie'} onClick={()=>onTab('movie')}>Монтаж</button><IconButton label="Настройки" hint={updateAvailable?"Доступно обновление":"Настройки"} className="icon-button settings-trigger" onClick={onSettings}><Settings size={16}/>{updateAvailable&&<span className="update-dot" aria-label="Доступно обновление"/>}</IconButton></nav>}<div className="titlebar-drag" data-tauri-drag-region/><div className="window-actions">{!quick&&<><button aria-label="Свернуть" onClick={()=>void window.minimize()}><Minus size={13}/></button><button aria-label="Развернуть" onClick={()=>void window.toggleMaximize()}><Square size={11}/></button></>}<button className="window-close" aria-label="Закрыть" onClick={()=>void window.close()}><X size={15}/></button></div></header>;
 }
@@ -83,6 +76,7 @@ export function App(){
   finally{saving.current=false;setBusy(false);}
  },[selected,config,busy,hardware,selection,add,select]);
  const versions=selected?clips.filter(c=>c.path===selected.path||c.path===(selected.original_path??selected.path)||c.original_path===(selected.original_path??selected.path)):[];
+ const selectedTitle=selected?clipTitle(versions.find(clip=>clip.path===selected.original_path)??selected):'';
  const goTab=(next:'clips'|'movie')=>{setTab(next);if(next==='clips')setView('library');else setMovieVisited(true);};
  const action=<SaveAction busy={busy} disabled={!selected} onSave={()=>void saveClip()}/>;
  return <Tooltip.Provider><div className={`app ${quick?'quick-app':''}`}><Titlebar tab={tab} busy={busy} updateAvailable={!!updates.status?.available} onTab={goTab} onSettings={()=>setSettingsOpen(true)}/>
@@ -91,14 +85,17 @@ export function App(){
   if(clip&&clip.path!==selectedPath.current)select(clip,hardware);
  }}>
   {!!pending?.length&&<Tabs.List className="quick-tabs" aria-label="Быстрые клипы">
-   {pending.map(clip=><Tabs.Trigger key={clip.path} value={clip.path} title={filename(clip.path)} disabled={busy}>{quickClipLabel(clip)}</Tabs.Trigger>)}
+   {pending.map(clip=>{
+    const title=clipTitle(clip);
+    return <Tabs.Trigger key={clip.path} value={clip.path} title={title} disabled={busy}>{title}</Tabs.Trigger>;
+   })}
   </Tabs.List>}
   {selected?<Tabs.Content key={selected.path} value={selected.path} className="quick-body">
    <Editor clip={selected} audioTracks={config?.audioTracks} selection={selection} onChange={setSelection} compact busy={busy} onViewed={()=>viewed(selected)} onSave={()=>void saveClip()}/>
   </Tabs.Content>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{action}</footer>
  </Tabs.Root>:<>
- <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid clips={clips} onOpen={clip=>{select(clip,hardware);viewed(clip);}} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout"><main className="main-editor"><header className="editor-header"><IconButton label="Назад к клипам" disabled={busy} onClick={()=>setView('library')}><ArrowLeft size={17}/></IconButton><span className="current-name" title={filename(selected.path)}>{filename(selected.path)}</span><span className="spacer"/>{versions.length>1&&<div className="version-switch" aria-label="Версия клипа">{versions.map(c=><button key={c.path} disabled={busy} className={c.path===selected.path?'active':''} onClick={()=>{select(c,hardware);viewed(c);}}>{c.original_path?'Обработан':'Исходник'}</button>)}</div>}</header><Editor key={selected.path} clip={selected} audioTracks={config.audioTracks} selection={selection} onChange={setSelection} busy={busy} suspended={settingsOpen||tab!=='clips'} onViewed={()=>viewed(selected)}/></main><Inspector clip={selected} selection={selection} config={config} setConfig={setConfig} state={state} busy={busy}>{action}</Inspector></div>:null}</div>
+ <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid clips={clips} onOpen={clip=>{select(clip,hardware);viewed(clip);}} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout"><main className="main-editor"><header className="editor-header"><IconButton label="Назад к клипам" disabled={busy} onClick={()=>setView('library')}><ArrowLeft size={17}/></IconButton><span className="current-name" title={selectedTitle}>{selectedTitle}</span><span className="spacer"/>{versions.length>1&&<div className="version-switch" aria-label="Версия клипа">{versions.map(c=><button key={c.path} disabled={busy} className={c.path===selected.path?'active':''} onClick={()=>{select(c,hardware);viewed(c);}}>{c.original_path?'Обработан':'Исходник'}</button>)}</div>}</header><Editor key={selected.path} clip={selected} audioTracks={config.audioTracks} selection={selection} onChange={setSelection} busy={busy} suspended={settingsOpen||tab!=='clips'} onViewed={()=>viewed(selected)}/></main><Inspector clip={selected} selection={selection} config={config} setConfig={setConfig} state={state} busy={busy}>{action}</Inspector></div>:null}</div>
  {state&&movieVisited&&<div className="workspace" hidden={tab!=='movie'}><MovieWorkspace clips={clips} state={state} project={project} setProject={setProject} onImport={imported} onViewed={viewed} onSettings={()=>setSettingsOpen(true)} onError={setError} suspended={settingsOpen||tab!=='movie'} onBusy={setBusy} onSaved={clip=>{add(clip);setMessage('Видео сохранено');}}/></div>}
  </>}
  {state&&!quick&&<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} state={state} onError={setError} updates={updates} exporting={busy} saveProject={()=>{if(projectKey)localStorage.setItem(projectKey,JSON.stringify(project));}}/>}{message&&!visibleError&&<div className="toast" role="status">{message}</div>}{visibleError&&<div className="toast error-toast" role="alert"><span>{visibleError}</span><button aria-label="Закрыть уведомление" onClick={()=>{setError('');setState(current=>current?{...current,error:null}:current);void api.dismiss();}}><X size={15}/></button></div>}
