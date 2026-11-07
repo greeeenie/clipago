@@ -11,8 +11,8 @@ afterEach(cleanup);
 it('groups application processes and removes every Discord stream together',()=>{
  const change=vi.fn();const config=defaultConfig(clip,false);
  render(<Tooltip.Provider><ExportPanel clip={clip} config={config} setConfig={change} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/></Tooltip.Provider>);
- expect(screen.getAllByRole('checkbox')).toHaveLength(2);
- fireEvent.click(screen.getByRole('checkbox',{name:'Discord'}));
+ expect(screen.getAllByRole('switch')).toHaveLength(2);
+ fireEvent.click(screen.getByRole('switch',{name:'Discord'}));
  expect(change.mock.calls[0][0].audioTracks).toEqual([1]);
 });
 it('keeps explicit mute in the export request',async()=>{

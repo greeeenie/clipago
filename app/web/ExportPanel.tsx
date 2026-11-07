@@ -1,6 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react';
-import {Collapsible,Checkbox} from 'radix-ui';
-import {AudioLines,Check,ChevronDown,LoaderCircle,X} from 'lucide-react';
+import {Collapsible} from 'radix-ui';
+import {AudioLines,ChevronDown,LoaderCircle,X} from 'lucide-react';
 import {IconButton,Select,Slider,Switch} from './components';
 import {api,withPreset,effectiveConfig,estimatedSize,type Clip,type ExportConfig,type Format,type Snapshot,type Codec} from './api';
 export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,busy,state,mode='save',embedded=false,advancedContent}:{clip:Clip;config:ExportConfig;setConfig:(c:ExportConfig)=>void;start:number;end:number;onClose:()=>void;onExport:()=>void;busy:boolean;state:Snapshot;mode?:'save'|'segment'|'movie';embedded?:boolean;advancedContent?:ReactNode}){
@@ -30,7 +30,11 @@ export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,bu
       {!gif&&<div className="rate-summary">≈ {estimated.toFixed(1)} МБ</div>}
       {showAudio&&<div className="field audio-tracks"><label>Звук</label>{groups.map(({name,indices})=>{
         const icon=audioIcons?.path===clip.path?audioIcons.icons[name]:undefined;
-        return <label className="audio-track" key={name} title={name}><Checkbox.Root className="audio-checkbox" checked={indices.every(i=>config.audioTracks.includes(i))} onCheckedChange={checked=>setConfig({...config,audioTracks:checked?[...new Set([...config.audioTracks,...indices])]:config.audioTracks.filter(i=>!indices.includes(i))})}><Checkbox.Indicator><Check size={13}/></Checkbox.Indicator></Checkbox.Root>{icon?<img className="audio-track-icon" src={icon} alt=""/>:<AudioLines className="audio-track-icon" aria-hidden="true"/>}<span>{name}</span></label>;
+        return <div className="audio-track" key={name}>
+          {icon?<img className="audio-track-icon" src={icon} alt=""/>:<AudioLines className="audio-track-icon" aria-hidden="true"/>}
+          <span title={name}>{name}</span>
+          <Switch label={name} disabled={busy} value={indices.every(i=>config.audioTracks.includes(i))} onChange={enabled=>setConfig({...config,audioTracks:enabled?[...new Set([...config.audioTracks,...indices])]:config.audioTracks.filter(i=>!indices.includes(i))})}/>
+        </div>;
       })}</div>}
       <Collapsible.Root className="advanced export-advanced"><Collapsible.Trigger className="disclosure">Дополнительно<ChevronDown size={14}/></Collapsible.Trigger><Collapsible.Content className="advanced-content">
         {advancedContent}

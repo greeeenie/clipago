@@ -1,7 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Play,Pause,Volume2,VolumeX,Maximize,LoaderCircle} from 'lucide-react';
 import {Timeline,type Selection} from './Timeline';
-import {TrimFields} from './TrimFields';
 import {IconButton,Slider} from './components';
 import {api,fileUrl,time,type Clip} from './api';
 import {usePreviewAudio} from './usePreviewAudio';
@@ -30,7 +29,7 @@ export function VideoPreview({clip,selection,onChange,compact=false,busy=false,s
   useEffect(()=>{const hidden=()=>{if(document.hidden){preview.cancelResume();video.current?.pause();}};document.addEventListener('visibilitychange',hidden);return()=>document.removeEventListener('visibilitychange',hidden);},[]);
   useEffect(()=>{let live=true;let off:(()=>void)|undefined;void listen('app-hidden',()=>{preview.cancelResume();video.current?.pause();}).then(fn=>{if(live)off=fn;else fn();});return()=>{live=false;off?.();};},[]);
   const failed=()=>{if(fallback.current){setFailure('Видео недоступно для предпросмотра');return;}fallback.current=true;setPreparing(true);api.preview(clip.path).then(path=>setSrc(fileUrl(path))).catch(e=>setFailure(String(e))).finally(()=>setPreparing(false));};
-  const aspect=Number.isFinite(clip.aspect_ratio)&&clip.aspect_ratio>0?clip.aspect_ratio:16/9;const height=Math.max(40,Math.min(bounds.width/aspect,bounds.height-(showTimeline?(compact?80:180):44)));const width=Math.min(bounds.width,height*aspect);const stackWidth=Math.max(width,Math.min(bounds.width,480));
+  const aspect=Number.isFinite(clip.aspect_ratio)&&clip.aspect_ratio>0?clip.aspect_ratio:16/9;const height=Math.max(40,Math.min(bounds.width/aspect,bounds.height-(showTimeline?(compact?80:130):44)));const width=Math.min(bounds.width,height*aspect);const stackWidth=Math.max(width,Math.min(bounds.width,480));
   return <div className={`editor-workspace ${compact?'quick-editor':''}`} ref={host}>
     <div className="editor-stack" style={{width:stackWidth}}>
       <div className="video-box" style={{aspectRatio:aspect,width,alignSelf:'center'}}>
@@ -45,7 +44,6 @@ export function VideoPreview({clip,selection,onChange,compact=false,busy=false,s
         <IconButton label="Полный экран" onClick={()=>void video.current?.requestFullscreen().catch(()=>{})}><Maximize size={15}/></IconButton>
       </div>
       {showTimeline&&<Timeline clip={clip} selection={selection} onChange={seek} compact={compact} disabled={busy}/>}
-      {showTimeline&&!compact&&<TrimFields clip={clip} selection={selection} onChange={seek} disabled={busy}/>}
     </div>
   </div>;
 }

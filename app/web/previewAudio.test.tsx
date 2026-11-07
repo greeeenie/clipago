@@ -23,17 +23,17 @@ beforeEach(()=>{
 });
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
 function Harness(){const [config,setConfig]=useState(defaultConfig(clip,false));return <Tooltip.Provider><Editor clip={clip} audioTracks={config.audioTracks} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/><ExportPanel clip={clip} config={config} setConfig={setConfig} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/></Tooltip.Provider>;}
-it('checkboxes mute preview stems immediately without seeking or restarting the remaining sound',async()=>{
+it('switches mute preview stems immediately without seeking or restarting the remaining sound',async()=>{
  const {container}=render(<Harness/>);await waitFor(()=>expect(audio).toHaveLength(2));
  const video=container.querySelector('video')!;video.currentTime=12;
  await act(async()=>{await video.play();});
  expect(video.muted).toBe(true);expect(audio[0].paused).toBe(false);expect(audio[1].paused).toBe(false);
  expect(audio[0].currentTime).toBe(12);
  audio[0].currentTime=12.03;
- fireEvent.click(screen.getByRole('checkbox',{name:'Discord'}));
+ fireEvent.click(screen.getByRole('switch',{name:'Discord'}));
  expect(audio[1].muted).toBe(true);expect(audio[0].muted).toBe(false);expect(audio[0].currentTime).toBe(12.03);expect(video.paused).toBe(false);
- fireEvent.click(screen.getByRole('checkbox',{name:'Discord'}));expect(audio[1].muted).toBe(false);
- fireEvent.click(screen.getByRole('checkbox',{name:'Discord'}));fireEvent.click(screen.getByRole('checkbox',{name:'Deadlock'}));expect(audio.every(a=>a.muted)).toBe(true);expect(video.muted).toBe(true);
+ fireEvent.click(screen.getByRole('switch',{name:'Discord'}));expect(audio[1].muted).toBe(false);
+ fireEvent.click(screen.getByRole('switch',{name:'Discord'}));fireEvent.click(screen.getByRole('switch',{name:'Deadlock'}));expect(audio.every(a=>a.muted)).toBe(true);expect(video.muted).toBe(true);
 });
 it('preview volume affects every stem, survives mute, and does not change export settings',async()=>{
  const {container}=render(<Harness/>);await waitFor(()=>expect(audio).toHaveLength(2));
@@ -44,7 +44,7 @@ it('preview volume affects every stem, survives mute, and does not change export
  fireEvent.click(screen.getByRole('button',{name:'Выключить звук'}));expect(audio.every(a=>a.muted)).toBe(true);
  fireEvent.click(screen.getByRole('button',{name:'Включить звук'}));expect(audio[0].volume).toBe(.01);expect(audio[0].muted).toBe(false);
  expect(localStorage.getItem('rewind.preview.volume')).toBe('0.01');
- expect(screen.getByRole('checkbox',{name:'Discord'}).getAttribute('data-state')).toBe('checked');
+ expect(screen.getByRole('switch',{name:'Discord'}).getAttribute('data-state')).toBe('checked');
 });
 it('keeps sound synchronized on seeking, pausing and hiding the editor',async()=>{
  const {container,rerender}=render(<Tooltip.Provider><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></Tooltip.Provider>);
