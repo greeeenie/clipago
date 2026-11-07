@@ -1,9 +1,9 @@
-import {useEffect,useState,type KeyboardEvent,type ReactNode} from 'react';
+import {useEffect,useState,type KeyboardEvent} from 'react';
 import {Dialog,Tabs} from 'radix-ui';
-import {ArrowUpRight,BookOpen,CircleDot,Clapperboard,Film,FolderOpen,Github,Info,Keyboard,RotateCcw,Settings2,SlidersHorizontal,X,type LucideIcon} from 'lucide-react';
-import {IconButton,Select,Slider,Switch} from './components';
+import {ArrowUpRight,BookOpen,CircleDot,Clapperboard,Film,FolderOpen,Github,Info,Keyboard,RotateCcw,Settings2,X,type LucideIcon} from 'lucide-react';
+import {Select,Slider,Switch} from './components';
 import {api,snapBuffer,type Settings,type Snapshot,type Encoder,type EditorHotkeys} from './api';
-import {defaultEditorHotkeys,editorActions,editorHotkeys,hotkeyLabel,keyCombination,movieActions,playbackAction} from './editorHotkeys';
+import {editorActions,editorHotkeys,hotkeyLabel,keyCombination,movieActions,playbackAction} from './editorHotkeys';
 import type {useAppUpdates} from './useAppUpdates';
 import {version} from '../package.json';
 
@@ -14,19 +14,20 @@ const encoderLabels:Record<Encoder,string>={Auto:'Автоматически',Nv
 const sections=[
   {id:'general',title:'Общие',icon:Settings2},
   {id:'hotkeys',title:'Горячие клавиши',icon:Keyboard},
-  {id:'advanced',title:'Дополнительно',icon:SlidersHorizontal},
   {id:'about',title:'О программе',icon:Info},
 ] as const;
 
-function SettingsHeading({title,icon:Icon,action}:{title:string;icon:LucideIcon;action?:ReactNode}){
-  return <div className="settings-heading"><h3><Icon size={18} aria-hidden="true"/>{title}</h3>{action}</div>;
+function SettingsHeading({title,icon:Icon}:{title:string;icon:LucideIcon}){
+  return <div className="settings-heading"><h3><Icon size={18} aria-hidden="true"/>{title}</h3></div>;
 }
 
 export function SettingsDialog({open,onOpenChange,state,onError,updates,exporting,saveProject}:{open:boolean;onOpenChange:(v:boolean)=>void;state:Snapshot;onError:(message:string)=>void;updates:ReturnType<typeof useAppUpdates>;exporting:boolean;saveProject:()=>void}){
   const [draft,setDraft]=useState(state.settings);useEffect(()=>setDraft(state.settings),[state.settings]);
+  const [section,setSection]=useState<(typeof sections)[number]>(sections[0]);
+  const [resetting,setResetting]=useState(false);
   const [binding,setBinding]=useState<Binding>();const hotkeys=editorHotkeys(draft);
   const replayShortcut=legacyReplayShortcuts[draft.shortcut]??draft.shortcut;
-  const save=(next:Settings)=>{setDraft(next);api.settings(next).catch(e=>onError(String(e)));};
+  const save=(next:Settings)=>{setDraft(next);return api.settings(next).catch(e=>onError(String(e)));};
   const recordBinding=(id:Binding,e:KeyboardEvent<HTMLButtonElement>)=>{
     if(binding!==id)return;
     e.stopPropagation();
@@ -50,28 +51,42 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
   const hotkeyRow=(id:Binding,label:string,value:string)=>(
     <div className="setting-row" key={id}><span id={`hotkey-${id}`}>{label}</span>{bindingButton(id,`hotkey-${id}`,value)}</div>
   );
-  const resetMovieHotkeys=()=>{
-    const conflict=movieActions.find(action=>[replayShortcut,hotkeys.play].includes(defaultEditorHotkeys[action.id]));
-    if(conflict){
-      const usedBy=defaultEditorHotkeys[conflict.id]===replayShortcut?'Сохранить клип':playbackAction.label;
-      onError(`Сочетание для «${conflict.label}» уже используется: «${usedBy}».`);
-      return;
-    }
+  const restoreDefaults=async()=>{
+    if(resetting||section.id==='about')return;
     setBinding(undefined);
-    save({...draft,editor_hotkeys:{...defaultEditorHotkeys,play:hotkeys.play}});
+    setResetting(true);
+    try{
+      const defaults=await api.defaultSettings();
+      const {buffer_seconds,fps,monitor,encoder,output_dir,system_audio,shortcut,editor_hotkeys}=defaults;
+      await save({...draft,...(section.id==='hotkeys'?{shortcut,editor_hotkeys}:{buffer_seconds,fps,monitor,encoder,output_dir,system_audio})});
+    }catch(e){
+      onError(String(e));
+    }finally{
+      setResetting(false);
+    }
   };
   const updateMessage=updates.error||(updates.status?.available
     ? (updates.status.ui_only?'Обновится интерфейс. Запись продолжится.':'Для установки Clipago перезапустится.')
     : updates.status?'Установлена последняя версия':'');
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-backdrop settings-backdrop"/><Dialog.Content className="settings-dialog" aria-describedby={undefined} onEscapeKeyDown={event=>{if(binding){event.preventDefault();setBinding(undefined);}}}>
-    <Dialog.Close asChild><button className="icon-button settings-close" aria-label="Закрыть настройки"><X size={17}/></button></Dialog.Close>
-    <Tabs.Root className="settings-layout" defaultValue="general" orientation="vertical" onValueChange={()=>setBinding(undefined)}>
+  return <Dialog.Root open={open} onOpenChange={next=>{if(!next){setSection(sections[0]);setBinding(undefined);}onOpenChange(next);}}><Dialog.Portal><Dialog.Overlay className="dialog-backdrop settings-backdrop"/><Dialog.Content className="settings-dialog" aria-describedby={undefined} onEscapeKeyDown={event=>{if(binding){event.preventDefault();setBinding(undefined);}}}>
+    <Tabs.Root className="settings-layout" value={section.id} orientation="vertical" onValueChange={id=>{
+      const next=sections.find(item=>item.id===id);
+      if(next)setSection(next);
+      setBinding(undefined);
+    }}>
       <aside className="settings-sidebar">
         <Dialog.Title>Настройки</Dialog.Title>
         <Tabs.List className="settings-nav" aria-label="Разделы настроек">
           {sections.map(({id,title,icon:Icon})=><Tabs.Trigger className="settings-tab" key={id} value={id}><Icon size={18} aria-hidden="true"/>{title}{id==='about'&&updates.status?.available&&<span className="settings-update-indicator" aria-label="Доступно обновление"/>}</Tabs.Trigger>)}
         </Tabs.List>
       </aside>
+      <header className="settings-toolbar">
+        {section.id!=='about'&&<span className="settings-toolbar-title">{section.title}</span>}
+        <div className="settings-toolbar-actions">
+          {section.id!=='about'&&<button type="button" className="settings-reset" disabled={resetting||(section.id==='general'&&state.transitioning)} onClick={()=>void restoreDefaults()}><RotateCcw size={14} aria-hidden="true"/>Вернуть по умолчанию</button>}
+          <Dialog.Close asChild><button className="icon-button" aria-label="Закрыть настройки"><X size={17}/></button></Dialog.Close>
+        </div>
+      </header>
       <Tabs.Content className="settings-tab-panel" value="general">
         <div className="settings-stack">
           <section className="settings-section">
@@ -107,19 +122,11 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
             </div>
           </section>
           <section className="settings-section">
-            <SettingsHeading title="Монтаж" icon={Clapperboard} action={<IconButton label="Сбросить клавиши монтажа" onClick={resetMovieHotkeys}><RotateCcw size={15}/></IconButton>}/>
+            <SettingsHeading title="Монтаж" icon={Clapperboard}/>
             <div className="settings-card">
               {movieActions.map(action=>hotkeyRow(action.id,action.label,hotkeys[action.id]))}
             </div>
           </section>
-        </div>
-      </Tabs.Content>
-      <Tabs.Content className="settings-tab-panel" value="advanced">
-        <div className="settings-section">
-          <SettingsHeading title="Дополнительно" icon={SlidersHorizontal}/>
-          <div className="settings-card">
-            {(['ffmpeg','ffprobe'] as const).map(key=><div className="setting-row" key={key}><label htmlFor={key}>{key==='ffmpeg'?'FFmpeg':'FFprobe'}</label><input id={key} value={draft[key]} onChange={e=>setDraft({...draft,[key]:e.target.value})} onBlur={()=>{if(draft[key]!==state.settings[key])save(draft);}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}} spellCheck={false}/></div>)}
-          </div>
         </div>
       </Tabs.Content>
       <Tabs.Content className="settings-tab-panel" value="about">
@@ -128,8 +135,9 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
           <div className="settings-card settings-update">
             <div className="settings-update-info"><strong>Обновления</strong>{updateMessage&&<p className="update-message" role="status">{updateMessage}</p>}</div>
             <div className="settings-update-actions">
-              <button className="secondary-button" disabled={!!updates.activity} onClick={()=>void updates.check()}>{updates.activity==='checking'?'Проверка…':'Проверить'}</button>
-              {updates.status?.available&&<button className="primary-button" disabled={exporting||!!updates.activity} onClick={()=>void updates.install(saveProject)}>{updates.activity==='installing'?'Установка…':`Установить ${updates.status.available}`}</button>}
+              {updates.status?.available
+                ? <button className="primary-button" disabled={exporting||!!updates.activity} onClick={()=>void updates.install(saveProject)}>{updates.activity==='installing'?'Установка…':`Установить ${updates.status.available}`}</button>
+                : <button className="secondary-button" disabled={!!updates.activity} onClick={()=>void updates.check()}>{updates.activity==='checking'?'Проверка…':'Проверить'}</button>}
             </div>
           </div>
           <div className="settings-card">

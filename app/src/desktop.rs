@@ -481,6 +481,7 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                             && let Err(message) = hotkey.rebind(next.shortcut.clone())
                         {
                             next.shortcut = previous.shortcut.clone();
+                            next.editor_hotkeys = previous.editor_hotkeys.clone();
                             state.error = Some(message);
                         }
                         match next.save() {
@@ -690,6 +691,10 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
 #[tauri::command]
 fn snapshot(engine: tauri::State<Engine>) -> Snapshot {
     engine.0.state.lock().unwrap().clone()
+}
+#[tauri::command]
+fn default_settings() -> Settings {
+    Settings::default()
 }
 #[tauri::command]
 fn set_recording(engine: tauri::State<Engine>, enabled: bool) -> Result<()> {
@@ -1262,6 +1267,7 @@ pub fn run() {
         .manage(ui)
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            default_settings,
             set_recording,
             save_replay,
             update_settings,

@@ -11,6 +11,7 @@ export type Compression='copy'|'balanced'|'compact'|'custom';
 export type ExportConfig={automatic:boolean;audioTracks:number[];preset:Compression;quality:'Bitrate'|'Target'|'Copy';bitrate:number;target:number;height:number|null;encoding:ExportOptions};
 export const api={
   snapshot:()=>invoke<Snapshot>('snapshot'),
+  defaultSettings:()=>invoke<Settings>('default_settings'),
   library:()=>invoke<Clip[]>('library'),
   viewed:(path:string)=>invoke<Clip>('mark_viewed',{path}),
   movie:(segments:MovieSegment[],clips:Clip[],output:ExportConfig,summary:Clip,name:string)=>invoke<Clip|null>('render_movie',{segments:segments.map(s=>({path:s.path,start:s.start,end:s.end,gap_before:s.gapBefore??0,...renderConfig(clips.find(c=>c.path===s.path)!,s.config),preprocess:s.config.preset==='compact'||s.config.preset==='custom'||!s.config.automatic||s.config.quality==='Target'})),output:{...renderConfig(summary,output),audio_tracks:undefined,name}}),
