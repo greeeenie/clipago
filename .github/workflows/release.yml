@@ -70,6 +70,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLIPAGO_TAG: ${{ steps.version.outputs.tag }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $files = @(./scripts/release-assets.ps1 -Repository $env:GITHUB_REPOSITORY)
           $draft = gh release view $env:CLIPAGO_TAG --repo $env:GITHUB_REPOSITORY --json isDraft 2>$null

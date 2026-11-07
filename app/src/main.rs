@@ -2,6 +2,7 @@
 mod desktop;
 mod hotkey;
 mod startup;
+mod ui_update;
 fn main() {
     desktop::run();
 }

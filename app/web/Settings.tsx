@@ -78,6 +78,9 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
           {updates.activity==='checking'?'Проверка…':'Проверить'}
         </button>
       </div>
+      {updates.status?.available&&<p className="update-message">{updates.status.ui_only
+        ? 'Обновится интерфейс. Запись продолжится.'
+        : 'Для установки Clipago перезапустится.'}</p>}
       {updates.error&&<p className="update-message" role="status">{updates.error}</p>}
       {updates.status&&!updates.status.available&&!updates.error&&<p className="update-message" role="status">Установлена последняя версия</p>}
     </div>

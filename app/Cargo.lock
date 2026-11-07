@@ -3030,13 +3030,15 @@ dependencies = [
 
 [[package]]
 name = "rewind"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
  "directories",
+ "minisign-verify",
  "rfd",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

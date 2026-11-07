@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 
-type UpdateStatus = {current: string; available: string | null};
+type UpdateStatus = {current: string; available: string | null; ui_only: boolean};
 
 export function useAppUpdates(enabled: boolean) {
   const [status, setStatus] = useState<UpdateStatus>();
@@ -45,7 +45,7 @@ export function useAppUpdates(enabled: boolean) {
     setError('');
     try {
       saveProject();
-      await invoke('install_update', {version});
+      await invoke('install_update', {version, uiOnly: status.ui_only});
     } catch (reason) {
       const details = String(reason);
       setError(details.startsWith('Релиз изменился') || details.startsWith('Дождитесь')

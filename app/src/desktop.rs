@@ -1,4 +1,4 @@
-use crate::hotkey::Hotkey;
+use crate::{hotkey::Hotkey, ui_update::UiUpdates};
 use base64::Engine as _;
 use rewind::{
     media::{self, Clip, EncodingOptions, Export, Quality, WorkDir},
@@ -179,20 +179,30 @@ impl Engine {
 struct UpdateStatus {
     current: String,
     available: Option<String>,
+    ui_only: bool,
 }
 
 #[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> Result<UpdateStatus> {
+async fn check_update(
+    app: tauri::AppHandle,
+    ui: tauri::State<'_, UiUpdates>,
+) -> Result<UpdateStatus> {
+    let current = ui.current_version();
+    let installed = current.clone();
     let update = app
         .updater_builder()
         .timeout(std::time::Duration::from_secs(20))
+        .version_comparator(move |_, release| release.version > installed)
         .build()
         .map_err(error)?
         .check()
         .await
         .map_err(error)?;
     Ok(UpdateStatus {
-        current: app.package_info().version.to_string(),
+        current: current.to_string(),
+        ui_only: update
+            .as_ref()
+            .is_some_and(|release| ui.target(release).is_some()),
         available: update.map(|release| release.version),
     })
 }
@@ -201,7 +211,9 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateStatus> {
 async fn install_update(
     app: tauri::AppHandle,
     engine: tauri::State<'_, Engine>,
+    ui: tauri::State<'_, UiUpdates>,
     version: String,
+    ui_only: bool,
 ) -> Result<()> {
     if engine.0.shutting_down.load(Ordering::SeqCst)
         || engine.0.export_busy.swap(true, Ordering::SeqCst)
@@ -217,9 +229,11 @@ async fn install_update(
     let _guard = InstallGuard(engine.inner().clone());
 
     let handle = app.clone();
+    let installed = ui.current_version();
     let update = app
         .updater_builder()
         .timeout(std::time::Duration::from_secs(120))
+        .version_comparator(move |_, release| release.version > installed)
         .on_before_exit(move || {
             handle.state::<crate::startup::Instance>().shutdown();
             handle.state::<Engine>().shutdown(true);
@@ -231,6 +245,40 @@ async fn install_update(
         .map_err(error)?
         .filter(|release| release.version == version)
         .ok_or_else(|| "Релиз изменился. Проверьте обновления ещё раз.".to_owned())?;
+    let target = ui.target(&update);
+    if ui_only != target.is_some() {
+        return Err("Релиз изменился. Проверьте обновления ещё раз.".into());
+    }
+    if let Some(target) = target {
+        let mut package = app
+            .updater_builder()
+            .target(target)
+            .build()
+            .map_err(error)?
+            .restore_update(update.raw_json)
+            .map_err(error)?
+            .ok_or_else(|| "Релиз изменился. Проверьте обновления ещё раз.".to_owned())?;
+        package.timeout = Some(std::time::Duration::from_secs(120));
+        if package.download_url.scheme() != "https" {
+            return Err("Недопустимый адрес обновления интерфейса".into());
+        }
+        let bytes = package.download(|_, _| {}, || {}).await.map_err(error)?;
+        let windows = app.webview_windows();
+        let mut pages = Vec::new();
+        for label in ["main", "quick"] {
+            if let Some(window) = windows.get(label) {
+                let mut url = window.url().map_err(error)?;
+                url.query_pairs_mut().append_pair("ui-version", &version);
+                pages.push((window.clone(), url));
+            }
+        }
+        ui.apply(&bytes, package.signature, &version)
+            .map_err(error)?;
+        for (window, url) in pages {
+            window.navigate(url).map_err(error)?;
+        }
+        return Ok(());
+    }
     update
         .download_and_install(|_, _| {}, || {})
         .await
@@ -1166,8 +1214,11 @@ pub fn run() {
             return;
         }
     };
+    let mut context = tauri::generate_context!();
+    let ui = UiUpdates::load(&mut context);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(ui)
         .invoke_handler(tauri::generate_handler![
             snapshot,
             set_recording,
@@ -1246,7 +1297,7 @@ pub fn run() {
                 }
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Не удалось запустить Clipago");
     app.run(|app, event| {
         if matches!(event, tauri::RunEvent::Exit) {
