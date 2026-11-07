@@ -1,6 +1,6 @@
-import type {ReactNode} from 'react';
+import {useEffect,useState,type ReactNode} from 'react';
 import {Collapsible,Checkbox} from 'radix-ui';
-import {Check,ChevronDown,LoaderCircle,X} from 'lucide-react';
+import {AudioLines,Check,ChevronDown,LoaderCircle,X} from 'lucide-react';
 import {IconButton,Select,Slider,Switch} from './components';
 import {api,withPreset,effectiveConfig,estimatedSize,type Clip,type ExportConfig,type Format,type Snapshot,type Codec} from './api';
 export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,busy,state,mode='save',embedded=false,advancedContent}:{clip:Clip;config:ExportConfig;setConfig:(c:ExportConfig)=>void;start:number;end:number;onClose:()=>void;onExport:()=>void;busy:boolean;state:Snapshot;mode?:'save'|'segment'|'movie';embedded?:boolean;advancedContent?:ReactNode}){
@@ -9,13 +9,29 @@ export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,bu
   const changeFormat=(format:Format)=>{let next={...config,encoding:{...config.encoding,format,codec:(format==='Webm'?'Vp9':config.encoding.codec==='Vp9'?'H264':config.encoding.codec) as Codec}};if(format==='Gif'||format==='Webm'){next.encoding.hardware=false;if(copy||config.quality==='Target')next=withPreset(next,'balanced',clip);}if(format==='Gif'&&next.encoding.fps===null)next.encoding.fps=15;setConfig(next);};
   const estimated=estimatedSize(clip,config,end-start);
   const groups=Array.from(new Set(clip.audio_tracks.map(t=>t.name))).map(name=>({name,indices:clip.audio_tracks.filter(t=>t.name===name).map(t=>t.index)}));
+  const [audioIcons,setAudioIcons]=useState<{path:string;icons:Record<string,string>}>();
+  const showAudio=mode!=='movie'&&!gif&&groups.length>0;
+  useEffect(()=>{
+    if(!showAudio)return;
+    let live=true;
+    void (async()=>{
+      try{
+        const icons=await api.audioIcons(clip.path);
+        if(live&&icons)setAudioIcons({path:clip.path,icons});
+      }catch{}
+    })();
+    return()=>{live=false;};
+  },[clip.path,showAudio]);
   return <aside className={`export-panel ${embedded?'embedded':''}`}>
     {!embedded&&<header className="panel-header"><h2>{mode==='movie'?'Экспорт':mode==='segment'?'Фрагмент':'Обработка'}</h2><IconButton label="Закрыть параметры" onClick={onClose}><X size={16}/></IconButton></header>}
     <div className="export-scroll"><fieldset disabled={busy}>
       {mode!=='segment'&&<div className="field"><label>Формат</label><div className="segments formats">{(['Mp4','Mkv','Webm','Gif'] as const).map(format=><button key={format} className={config.encoding.format===format?'active':''} onClick={()=>changeFormat(format)}>{format==='Webm'?'WebM':format.toUpperCase()}</button>)}</div></div>}
       <div className="field"><label>Сжатие</label><div className="segments compression">{([{value:'copy',label:'Без сжатия'},{value:'balanced',label:'Баланс'},{value:'compact',label:'Компактно'}] as const).map(preset=><button key={preset.value} className={config.preset===preset.value?'active':''} disabled={preset.value==='copy'&&(gif||webm||mode!=='save')} title={preset.value==='copy'?'Исходные потоки без перекодирования. Обрезка — по ключевым кадрам. MP4/MKV.':undefined} onClick={()=>setConfig(withPreset(config,preset.value,clip))}>{preset.label}</button>)}</div></div>
       {!gif&&<div className="rate-summary">≈ {estimated.toFixed(1)} МБ</div>}
-      {mode!=='movie'&&!gif&&groups.length>0&&<div className="field audio-tracks"><label>Звук</label>{groups.map(({name,indices})=><label className="audio-track" key={name}><Checkbox.Root className="audio-checkbox" checked={indices.every(i=>config.audioTracks.includes(i))} onCheckedChange={checked=>setConfig({...config,audioTracks:checked?[...new Set([...config.audioTracks,...indices])]:config.audioTracks.filter(i=>!indices.includes(i))})}><Checkbox.Indicator><Check size={13}/></Checkbox.Indicator></Checkbox.Root><span>{name}</span></label>)}</div>}
+      {showAudio&&<div className="field audio-tracks"><label>Звук</label>{groups.map(({name,indices})=>{
+        const icon=audioIcons?.path===clip.path?audioIcons.icons[name]:undefined;
+        return <label className="audio-track" key={name} title={name}><Checkbox.Root className="audio-checkbox" checked={indices.every(i=>config.audioTracks.includes(i))} onCheckedChange={checked=>setConfig({...config,audioTracks:checked?[...new Set([...config.audioTracks,...indices])]:config.audioTracks.filter(i=>!indices.includes(i))})}><Checkbox.Indicator><Check size={13}/></Checkbox.Indicator></Checkbox.Root>{icon?<img className="audio-track-icon" src={icon} alt=""/>:<AudioLines className="audio-track-icon" aria-hidden="true"/>}<span>{name}</span></label>;
+      })}</div>}
       <Collapsible.Root className="advanced export-advanced"><Collapsible.Trigger className="disclosure">Дополнительно<ChevronDown size={14}/></Collapsible.Trigger><Collapsible.Content className="advanced-content">
         {advancedContent}
         {hardware&&!webm&&!gif&&<div className="setting-row gpu-row"><label>Кодировать на GPU</label><Switch value={config.encoding.hardware} label="Кодировать на видеокарте" disabled={copy||config.quality==='Target'} onChange={value=>setConfig({...config,preset:mode==='segment'?'custom':config.preset,encoding:{...config.encoding,hardware:value}})}/></div>}

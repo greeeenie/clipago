@@ -1,6 +1,6 @@
 [package]
 name = "rewind"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2024"
 description = "A small Windows replay buffer and video clip editor"
 license = "MIT"
@@ -17,6 +17,7 @@ tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-updater = "2"
 base64 = "0.22"
 minisign-verify = "0.3"
+sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
@@ -26,8 +27,9 @@ serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
+png = "0.18"
 windows-core = "0.62"
-windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_Performance", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_Performance", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
 windows = { version = "0.62", features = ["Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem"] }
 
 [profile.release]

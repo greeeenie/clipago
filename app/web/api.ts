@@ -24,6 +24,7 @@ export const api={
   thumbnail:(path:string,seconds:number)=>invoke<string>('thumbnail',{path,seconds}),
   preview:(path:string)=>invoke<string>('prepare_preview',{path}),
   previewAudio:(path:string)=>invoke<{index:number;path:string}[]>('prepare_audio_preview',{path}),
+  audioIcons:(path:string)=>invoke<Record<string,string>>('audio_track_icons',{path}),
   cancel:()=>invoke('cancel_export'),
   quick:(path:string)=>invoke('show_quick_clip',{path}),
   importPaths:(paths:string[])=>invoke<Clip[]>('import_paths',{paths}),

@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod audio_apps;
+pub mod audio_identity;
 pub mod layout;
 pub mod library;
 pub mod media;

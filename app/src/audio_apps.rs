@@ -9,6 +9,7 @@ use std::{
 
 struct Entry {
     name: String,
+    executable: Option<std::path::PathBuf>,
     recorder: AudioRecorder,
     seen: Instant,
 }
@@ -69,13 +70,24 @@ impl ApplicationAudio {
             let blocked = native::steam_audio_roots(&tree);
             entries.retain(|pid, _| !blocked.contains(pid));
         }
-        entries
+        let audible: Vec<_> = entries
             .values()
             .filter_map(|entry| {
                 let snapshot = entry.recorder.snapshot(end, duration);
                 snapshot
                     .is_audible()
-                    .then(|| (entry.name.clone(), snapshot))
+                    .then(|| (entry.name.clone(), entry.executable.clone(), snapshot))
+            })
+            .collect();
+        drop(entries);
+        audible
+            .into_iter()
+            .map(|(name, executable, snapshot)| {
+                #[cfg(windows)]
+                if let Some(path) = executable {
+                    let _ = crate::audio_identity::windows::cache_icon(&name, &path);
+                }
+                (name, snapshot)
             })
             .collect()
     }
@@ -92,6 +104,7 @@ impl Drop for ApplicationAudio {
 #[cfg(windows)]
 mod native {
     use super::*;
+    use crate::audio_identity::windows::{app_name, process_path};
     use anyhow::Result;
     use std::collections::BTreeSet;
     use windows::{
@@ -175,7 +188,7 @@ mod native {
         blocked
     }
 
-    fn root(pid: u32, processes: &BTreeMap<u32, (u32, String)>) -> Option<(u32, String)> {
+    fn root(pid: u32, processes: &BTreeMap<u32, (u32, String)>) -> Option<u32> {
         let (_, name) = processes.get(&pid)?;
         let mut pid = pid;
         for _ in 0..32 {
@@ -189,17 +202,9 @@ mod native {
             }
             pid = *parent;
         }
-        let label = match name.to_lowercase().as_str() {
-            "deadlock.exe" => "Deadlock",
-            "discord.exe" => "Discord",
-            "chrome.exe" => "Chrome",
-            "msedge.exe" => "Edge",
-            "firefox.exe" => "Firefox",
-            "spotify.exe" => "Spotify",
-            _ => name.trim_end_matches(".exe"),
-        };
-        Some((pid, label.to_owned()))
+        Some(pid)
     }
+
     pub(super) fn run(
         entries: Arc<Mutex<BTreeMap<u32, Entry>>>,
         rx: &mpsc::Receiver<Message>,
@@ -267,7 +272,7 @@ mod native {
                                 if pid == 0 {
                                     continue;
                                 }
-                                if let Some((pid, name)) = root(pid, &tree)
+                                if let Some(pid) = root(pid, &tree)
                                     && !blocked.contains(&pid)
                                 {
                                     if let Some(entry) = map.get_mut(&pid) {
@@ -275,10 +280,13 @@ mod native {
                                     } else {
                                         let recorder = AudioRecorder::for_process(pid)?;
                                         recorder.set_seconds(*seconds);
+                                        let executable = process_path(pid);
+                                        let name = app_name(&tree[&pid].1, executable.as_deref());
                                         map.insert(
                                             pid,
                                             Entry {
                                                 name,
+                                                executable,
                                                 recorder,
                                                 seen: now,
                                             },

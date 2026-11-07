@@ -1059,6 +1059,21 @@ async fn prepare_preview(
 }
 
 #[tauri::command]
+fn audio_track_icons(
+    engine: tauri::State<Engine>,
+    path: PathBuf,
+) -> Result<HashMap<String, String>> {
+    let clip = engine.clip(&path)?;
+    Ok(clip
+        .audio_tracks
+        .into_iter()
+        .filter_map(|track| {
+            rewind::audio_identity::icon_data(&track.name).map(|icon| (track.name, icon))
+        })
+        .collect())
+}
+
+#[tauri::command]
 async fn prepare_audio_preview(
     app: tauri::AppHandle,
     engine: tauri::State<'_, Engine>,
@@ -1235,6 +1250,7 @@ pub fn run() {
             open_folder,
             thumbnail,
             prepare_preview,
+            audio_track_icons,
             prepare_audio_preview,
             export_video,
             cancel_export,
