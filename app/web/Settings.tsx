@@ -1,6 +1,6 @@
 import {useEffect,useState,type KeyboardEvent,type ReactNode} from 'react';
 import {Dialog,Tabs} from 'radix-ui';
-import {ArrowUpRight,BookOpen,CircleDot,Film,FolderOpen,Github,Info,Keyboard,Layers,RotateCcw,SlidersHorizontal,X,type LucideIcon} from 'lucide-react';
+import {ArrowUpRight,BookOpen,CircleDot,Film,FolderOpen,Github,Info,Keyboard,RotateCcw,SlidersHorizontal,X,type LucideIcon} from 'lucide-react';
 import {IconButton,Select,Slider,Switch} from './components';
 import {api,snapBuffer,type Settings,type Snapshot,type Encoder,type EditorHotkeys} from './api';
 import {defaultEditorHotkeys,editorActions,editorHotkeys,hotkeyLabel,keyCombination} from './editorHotkeys';
@@ -58,29 +58,27 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
     ? (updates.status.ui_only?'Обновится интерфейс. Запись продолжится.':'Для установки Clipago перезапустится.')
     : updates.status?'Установлена последняя версия':'');
   return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Overlay className="dialog-backdrop settings-backdrop"/><Dialog.Content className="settings-dialog" aria-describedby={undefined} onEscapeKeyDown={event=>{if(binding){event.preventDefault();setBinding(undefined);}}}>
-    <header className="dialog-header settings-header"><Dialog.Title>Настройки</Dialog.Title><Dialog.Close asChild><button className="icon-button" aria-label="Закрыть настройки"><X size={17}/></button></Dialog.Close></header>
+    <Dialog.Close asChild><button className="icon-button settings-close" aria-label="Закрыть настройки"><X size={17}/></button></Dialog.Close>
     <Tabs.Root className="settings-layout" defaultValue="record" orientation="vertical" onValueChange={()=>setBinding(undefined)}>
-      <Tabs.List className="settings-nav" aria-label="Разделы настроек">
-        {sections.map(({id,title,icon:Icon})=><Tabs.Trigger className="settings-tab" key={id} value={id}><Icon size={18} aria-hidden="true"/>{title}{id==='about'&&updates.status?.available&&<span className="settings-update-indicator" aria-label="Доступно обновление"/>}</Tabs.Trigger>)}
-      </Tabs.List>
+      <aside className="settings-sidebar">
+        <Dialog.Title>Настройки</Dialog.Title>
+        <Tabs.List className="settings-nav" aria-label="Разделы настроек">
+          {sections.map(({id,title,icon:Icon})=><Tabs.Trigger className="settings-tab" key={id} value={id}><Icon size={18} aria-hidden="true"/>{title}{id==='about'&&updates.status?.available&&<span className="settings-update-indicator" aria-label="Доступно обновление"/>}</Tabs.Trigger>)}
+        </Tabs.List>
+      </aside>
       <Tabs.Content className="settings-tab-panel" value="record">
-        <div className="settings-stack">
-          <section className="settings-section">
-            <SettingsHeading title="Запись" icon={CircleDot}/>
-            <div className="settings-card">
-              <div className="setting-row"><span>Фоновая запись</span><Switch value={state.recording} label="Фоновая запись" disabled={state.transitioning} onChange={value=>api.record(value).catch(e=>onError(String(e)))}/></div>
-              <div className="setting-row"><span>Системный звук</span><Switch value={draft.system_audio} label="Системный звук" onChange={system_audio=>save({...draft,system_audio})}/></div>
-            </div>
-          </section>
-          <section className="settings-section">
-            <SettingsHeading title="Буфер" icon={Layers}/>
-            <div className="settings-card buffer-setting">
+        <section className="settings-section">
+          <SettingsHeading title="Запись" icon={CircleDot}/>
+          <div className="settings-card">
+            <div className="setting-row"><span>Фоновая запись</span><Switch value={state.recording} label="Фоновая запись" disabled={state.transitioning} onChange={value=>api.record(value).catch(e=>onError(String(e)))}/></div>
+            <div className="setting-row"><span>Системный звук</span><Switch value={draft.system_audio} label="Системный звук" onChange={system_audio=>save({...draft,system_audio})}/></div>
+            <div className="buffer-setting">
               <div className="setting-heading"><span>Длина буфера</span><output>{draft.buffer_seconds} с</output></div>
               <Slider value={draft.buffer_seconds} min={30} max={120} step={5} label="Длина буфера" onChange={value=>setDraft({...draft,buffer_seconds:snapBuffer(value)})} onCommit={value=>save({...draft,buffer_seconds:snapBuffer(value)})}/>
               <div className="slider-labels"><span>30 с</span><span>2 мин</span></div>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </Tabs.Content>
       <Tabs.Content className="settings-tab-panel" value="video">
         <div className="settings-section">
