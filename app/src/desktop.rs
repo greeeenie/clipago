@@ -84,13 +84,14 @@ struct Snapshot {
     encoders: Vec<Encoder>,
     monitors: Vec<Monitor>,
     error: Option<String>,
-    quick: Option<Clip>,
+    quick: Vec<Clip>,
 }
 
 enum Action {
     Recording(bool),
     Configure(Settings),
     Save,
+    OpenQuick(Clip),
     Shutdown,
 }
 struct Inner {
@@ -244,10 +245,53 @@ fn publish_state(engine: &Engine, app: &tauri::AppHandle) {
     let _ = app.emit("state", engine.0.state.lock().unwrap().clone());
 }
 
-fn show_quick(app: &tauri::AppHandle) -> Result<()> {
-    if let Some(window) = app.get_webview_window("quick") {
-        window.show().map_err(error)?;
-        window.set_focus().map_err(error)?;
+fn show_quick_window(window: &tauri::WebviewWindow) -> Result<()> {
+    if window.is_visible().map_err(error)? {
+        return Ok(());
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
+        };
+        let hwnd = window.hwnd().map_err(error)?;
+        // Make the window available to Alt+Tab behind the active game.
+        let shown = unsafe {
+            SetWindowPos(
+                hwnd.0,
+                HWND_BOTTOM,
+                0,
+                0,
+                0,
+                0,
+                SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+            )
+        };
+        if shown == 0 {
+            return Err(error(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    window.show().map_err(error)
+}
+
+fn hide_quick(window: &tauri::WebviewWindow) {
+    let _ = window.emit("app-hidden", ());
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        // The background show bypasses Tao's cached visibility flag.
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+        unsafe { ShowWindow(hwnd.0, SW_HIDE) };
+    }
+    #[cfg(not(windows))]
+    let _ = window.hide();
+}
+
+// Called on the engine worker so window creation stays serialized and off the UI thread.
+fn show_quick(app: &tauri::AppHandle, engine: &Engine, clip: Clip) -> Result<()> {
+    let window = if let Some(window) = app.get_webview_window("quick") {
+        window
     } else {
         tauri::WebviewWindowBuilder::new(
             app,
@@ -255,17 +299,33 @@ fn show_quick(app: &tauri::AppHandle) -> Result<()> {
             tauri::WebviewUrl::App("index.html?quick=1".into()),
         )
         .title("Быстрый клип — Clipago")
-        .inner_size(448.0, 390.0)
-        .min_inner_size(420.0, 370.0)
+        .inner_size(448.0, 426.0)
+        .min_inner_size(420.0, 406.0)
         .resizable(true)
         .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
+        .focused(false)
+        .visible(false)
         .center()
         .build()
-        .map_err(error)?;
-    }
-    Ok(())
+        .map_err(error)?
+    };
+    let quick = window.clone();
+    let app = app.clone();
+    let engine = engine.clone();
+    window
+        .run_on_main_thread(move || {
+            {
+                let mut state = engine.0.state.lock().unwrap();
+                if !state.quick.iter().any(|pending| pending.path == clip.path) {
+                    state.quick.push(clip);
+                }
+            }
+            if let Err(e) = show_quick_window(&quick) {
+                engine.0.state.lock().unwrap().error = Some(e);
+            }
+            publish_state(&engine, &app);
+        })
+        .map_err(error)
 }
 
 fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
@@ -289,7 +349,7 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
             encoders: vec![Encoder::Auto, Encoder::Cpu],
             monitors: monitors(),
             error: initial_error,
-            quick: None,
+            quick: Vec::new(),
         }),
         clips: Mutex::new(HashMap::new()),
         catalog: Mutex::new(rewind::library::Catalog::load(
@@ -334,6 +394,12 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
             while let Ok(action) = requests.try_recv() {
                 match action {
                     Action::Shutdown => return,
+                    Action::OpenQuick(clip) => {
+                        if let Err(e) = show_quick(&handle, &worker_engine, clip) {
+                            worker_engine.0.state.lock().unwrap().error = Some(e);
+                            publish_state(&worker_engine, &handle);
+                        }
+                    }
                     Action::Save => {
                         if desired_recording && !saving && buffered >= 1.0 {
                             saving = true;
@@ -509,10 +575,8 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                             .and_then(|path| worker_engine.add_clip(&handle, &path))
                         {
                             Ok(clip) => {
-                                worker_engine.0.state.lock().unwrap().quick = Some(clip.clone());
                                 let _ = handle.emit("clip-added", &clip);
-                                let _ = handle.emit_to("quick", "quick-clip", &clip);
-                                if let Err(e) = show_quick(&handle) {
+                                if let Err(e) = show_quick(&handle, &worker_engine, clip) {
                                     worker_engine.0.state.lock().unwrap().error = Some(e);
                                     publish_state(&worker_engine, &handle);
                                 }
@@ -615,18 +679,10 @@ fn dismiss_error(app: tauri::AppHandle, engine: tauri::State<Engine>) {
 }
 
 #[tauri::command]
-async fn show_quick_clip(
-    app: tauri::AppHandle,
-    engine: tauri::State<'_, Engine>,
-    path: PathBuf,
-) -> Result<()> {
-    let clip = engine.clip(&path)?;
-    engine.0.state.lock().unwrap().quick = Some(clip.clone());
-    let _ = app.emit_to("quick", "quick-clip", &clip);
-    tauri::async_runtime::spawn_blocking(move || show_quick(&app))
-        .await
-        .map_err(error)?
+fn show_quick_clip(engine: tauri::State<Engine>, path: PathBuf) -> Result<()> {
+    engine.send(Action::OpenQuick(engine.clip(&path)?))
 }
+
 #[tauri::command]
 async fn import_paths(
     app: tauri::AppHandle,
@@ -1007,6 +1063,7 @@ struct ExportRequest {
 #[tauri::command]
 async fn export_video(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     engine: tauri::State<'_, Engine>,
     request: ExportRequest,
 ) -> Result<Option<Clip>> {
@@ -1066,6 +1123,20 @@ async fn export_video(
         engine.refresh_library(&app);
         let _ = app.emit("clip-added", &saved);
         notify(&app, "Копия сохранена");
+        if window.label() == "quick" {
+            let app_handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let empty = {
+                    let mut state = engine.0.state.lock().unwrap();
+                    state.quick.retain(|clip| clip.path != source_path);
+                    state.quick.is_empty()
+                };
+                if empty {
+                    hide_quick(&window);
+                }
+                publish_state(&engine, &app_handle);
+            });
+        }
         Ok(Some(saved))
     })
     .await
@@ -1160,12 +1231,19 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "main"
+            if matches!(window.label(), "main" | "quick")
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event
             {
                 api.prevent_close();
-                let _ = window.emit("app-hidden", ());
-                let _ = window.hide();
+                if window.label() == "main" {
+                    let _ = window.emit("app-hidden", ());
+                    let _ = window.hide();
+                } else if let Some(quick) = window.app_handle().get_webview_window("quick") {
+                    let engine = window.state::<Engine>();
+                    engine.0.state.lock().unwrap().quick.clear();
+                    hide_quick(&quick);
+                    publish_state(&engine, window.app_handle());
+                }
             }
         })
         .build(tauri::generate_context!())

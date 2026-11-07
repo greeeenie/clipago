@@ -208,6 +208,11 @@
 .quick-app .titlebar{height:34px;padding-left:12px}
 .quick-window-title{font-size:12px;font-weight:500}
 .quick-titlebar .window-actions>button{width:34px}
+.quick-workspace{display:flex;flex-direction:column;flex:1;min-height:0}
+.quick-tabs{display:flex;gap:4px;flex-shrink:0;overflow-x:auto;padding:4px 8px;background:var(--surface);border-bottom:1px solid var(--line);scrollbar-width:thin}
+.quick-tabs>button{flex:0 0 auto;max-width:165px;padding:0 9px;height:26px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
+.quick-tabs>button:hover,.quick-tabs>button[data-state=active]{background:var(--raised);color:var(--text)}
+.quick-tabs>button:focus-visible{outline-offset:-2px}
 .quick-body{display:flex;flex:1;min-height:0}
 .quick-editor{padding:12px 12px 0}
 .quick-editor .player-controls{height:32px;gap:4px}

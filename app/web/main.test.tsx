@@ -7,7 +7,7 @@ vi.mock('@tauri-apps/api/core',()=>({invoke:mocks.invoke,convertFileSrc:(path:st
 vi.mock('@tauri-apps/api/event',()=>({listen:vi.fn((name:string,handler:(event:{payload:unknown})=>void)=>{mocks.handlers.set(name,handler);return Promise.resolve(()=>mocks.handlers.delete(name));})}));
 vi.mock('@tauri-apps/api/window',()=>({getCurrentWindow:()=>({onDragDropEvent:vi.fn().mockResolvedValue(()=>{}),close:vi.fn(),minimize:vi.fn(),toggleMaximize:vi.fn()})}));
 import {App} from './main';
-const state:Snapshot={settings:{buffer_seconds:60,fps:30,monitor:0,encoder:'Auto',output_dir:'clips',ffmpeg:'ffmpeg',ffprobe:'ffprobe',shortcut:'CtrlAltS',system_audio:true},recording:false,transitioning:false,encoders:['Auto'],monitors:[{index:0,name:'Экран 1'}],error:'Запись остановилась: AcquireNextFrame failed: 887A0026',quick:null};
+const state:Snapshot={settings:{buffer_seconds:60,fps:30,monitor:0,encoder:'Auto',output_dir:'clips',ffmpeg:'ffmpeg',ffprobe:'ffprobe',shortcut:'CtrlAltS',system_audio:true},recording:false,transitioning:false,encoders:['Auto'],monitors:[{index:0,name:'Экран 1'}],error:'Запись остановилась: AcquireNextFrame failed: 887A0026',quick:[]};
 beforeEach(()=>{
   mocks.handlers.clear();mocks.invoke.mockReset();
   mocks.invoke.mockImplementation((name:string)=>Promise.resolve(name==='snapshot'?state:name==='library'?[]:undefined));
