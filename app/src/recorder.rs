@@ -1,5 +1,5 @@
 use crate::{
-    audio::{AudioRecorder, AudioSnapshot},
+    audio::AudioSnapshot,
     audio_apps::ApplicationAudio,
     media::{self, WorkDir},
     replay::{REPLAY_BYTE_LIMIT, ReplayBuffer, ReplaySnapshot, TS_PACKET_SIZE},
@@ -722,7 +722,6 @@ fn worker(
     let mut session: Option<Session> = None;
     let mut replay: Option<Arc<Mutex<ReplayBuffer>>> = None;
     let mut recording_settings: Option<Settings> = None;
-    let mut audio: Option<AudioRecorder> = None;
     let mut applications: Option<ApplicationAudio> = None;
     let mut recording_encoder = Encoder::Cpu;
     let mut graphics_support: Option<(String, bool)> = None;
@@ -749,16 +748,9 @@ fn worker(
                             Arc::new(Mutex::new(buffer))
                         })
                         .clone();
-                    if settings.system_audio && audio.is_none() {
+                    if settings.system_audio {
                         applications
                             .get_or_insert_with(|| ApplicationAudio::new(settings.buffer_seconds));
-                        match AudioRecorder::new() {
-                            Ok(capture) => {
-                                capture.set_seconds(settings.buffer_seconds);
-                                audio = Some(capture);
-                            }
-                            Err(e) => emit(Event::AudioState(Err(e.to_string()))),
-                        }
                     }
                     if graphics_support
                         .as_ref()
@@ -790,7 +782,6 @@ fn worker(
                 session = None;
                 replay = None;
                 recording_settings = None;
-                audio = None;
                 applications = None;
                 last_buffer = -1.0;
                 emit(Event::Stopped);
@@ -800,20 +791,12 @@ fn worker(
                 output_dir,
                 system_audio,
             }) => {
-                if system_audio && audio.is_none() && replay.is_some() {
-                    applications.get_or_insert_with(|| ApplicationAudio::new(seconds));
-                    match AudioRecorder::new() {
-                        Ok(capture) => audio = Some(capture),
-                        Err(e) => emit(Event::AudioState(Err(e.to_string()))),
-                    }
-                } else if !system_audio {
-                    audio = None;
+                if !system_audio {
                     applications = None;
+                } else if replay.is_some() {
+                    applications.get_or_insert_with(|| ApplicationAudio::new(seconds));
                 }
                 if let Some(capture) = &applications {
-                    capture.set_seconds(seconds);
-                }
-                if let Some(capture) = &audio {
                     capture.set_seconds(seconds);
                 }
                 if let Some(buffer) = &replay {
@@ -848,9 +831,8 @@ fn worker(
                                     .as_ref()
                                     .map(|a| a.snapshots(snapshot.end_time, duration))
                                     .unwrap_or_default(),
-                                audio: audio
-                                    .as_ref()
-                                    .map(|capture| capture.snapshot(snapshot.end_time, duration)),
+                                // A system-wide mix would bypass the Steam exclusion.
+                                audio: None,
                             };
                             if let Some(worker) = save_worker.take() {
                                 let _ = worker.join();
@@ -877,11 +859,6 @@ fn worker(
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
-        }
-        if let Some(capture) = &audio {
-            while let Ok(state) = capture.events.try_recv() {
-                emit(Event::AudioState(state));
-            }
         }
         if let Some(capture) = &applications {
             while let Ok(state) = capture.events.try_recv() {

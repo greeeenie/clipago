@@ -60,7 +60,15 @@ impl ApplicationAudio {
         let _ = self.control.send(Message::Seconds(seconds));
     }
     pub fn snapshots(&self, end: Instant, duration: f64) -> Vec<(String, AudioSnapshot)> {
-        let entries = self.entries.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap();
+        #[cfg(windows)]
+        {
+            let Ok(tree) = native::processes() else {
+                return Vec::new();
+            };
+            let blocked = native::steam_audio_roots(&tree);
+            entries.retain(|pid, _| !blocked.contains(pid));
+        }
         entries
             .values()
             .filter_map(|entry| {
@@ -85,12 +93,13 @@ impl Drop for ApplicationAudio {
 mod native {
     use super::*;
     use anyhow::Result;
+    use std::collections::BTreeSet;
     use windows::{
         Win32::{Media::Audio::*, System::Com::*},
         core::{Interface, implement},
     };
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, GetLastError, INVALID_HANDLE_VALUE},
         System::Diagnostics::ToolHelp::*,
     };
 
@@ -107,11 +116,11 @@ mod native {
             Ok(())
         }
     }
-    fn processes() -> BTreeMap<u32, (u32, String)> {
+    pub(super) fn processes() -> std::io::Result<BTreeMap<u32, (u32, String)>> {
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if snapshot == INVALID_HANDLE_VALUE {
-                return BTreeMap::new();
+                return Err(std::io::Error::last_os_error());
             }
             let mut entry = PROCESSENTRY32W {
                 dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
@@ -129,10 +138,43 @@ mod native {
                 result.insert(entry.th32ProcessID, (entry.th32ParentProcessID, name));
                 ok = Process32NextW(snapshot, &mut entry);
             }
+            let status = GetLastError();
             CloseHandle(snapshot);
-            result
+            if status != ERROR_NO_MORE_FILES {
+                return Err(std::io::Error::from_raw_os_error(status as i32));
+            }
+            Ok(result)
         }
     }
+
+    pub(super) fn steam_audio_roots(processes: &BTreeMap<u32, (u32, String)>) -> BTreeSet<u32> {
+        let mut blocked = BTreeSet::new();
+        for (&pid, (_, name)) in processes {
+            if ![
+                "steam.exe",
+                "steamwebhelper.exe",
+                "steamservice.exe",
+                "gameoverlayui.exe",
+                "gameoverlayui64.exe",
+            ]
+            .iter()
+            .any(|steam| name.eq_ignore_ascii_case(steam))
+            {
+                continue;
+            }
+            // WASAPI captures the whole tree below a selected PID. Reject its
+            // ancestors too, while still allowing games in Steam's child trees.
+            let mut current = pid;
+            while current != 0 && blocked.insert(current) {
+                let Some((parent, _)) = processes.get(&current) else {
+                    break;
+                };
+                current = *parent;
+            }
+        }
+        blocked
+    }
+
     fn root(pid: u32, processes: &BTreeMap<u32, (u32, String)>) -> Option<(u32, String)> {
         let (_, name) = processes.get(&pid)?;
         let mut pid = pid;
@@ -207,10 +249,12 @@ mod native {
                             false
                         }
                     });
-                    let tree = processes();
                     let now = Instant::now();
                     {
                         let mut map = entries.lock().unwrap();
+                        let tree = processes()?;
+                        let blocked = steam_audio_roots(&tree);
+                        map.retain(|pid, _| !blocked.contains(pid));
                         for (_, manager, _) in &watchers {
                             let sessions = manager.GetSessionEnumerator()?;
                             for i in 0..sessions.GetCount()? {
@@ -223,7 +267,9 @@ mod native {
                                 if pid == 0 {
                                     continue;
                                 }
-                                if let Some((pid, name)) = root(pid, &tree) {
+                                if let Some((pid, name)) = root(pid, &tree)
+                                    && !blocked.contains(&pid)
+                                {
                                     if let Some(entry) = map.get_mut(&pid) {
                                         entry.seen = now;
                                     } else {
