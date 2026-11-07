@@ -19,6 +19,7 @@ export const api={
   record:(enabled:boolean)=>invoke('set_recording',{enabled}),
   saveReplay:()=>invoke('save_replay'),
   folder:()=>invoke('open_folder'),
+  openHelp:(page:'github'|'docs')=>invoke<void>('open_help_page',{page}),
   chooseFolder:()=>invoke<string|null>('choose_folder'),
   dismiss:()=>invoke('dismiss_error'),
   thumbnail:(path:string,seconds:number)=>invoke<string>('thumbnail',{path,seconds}),

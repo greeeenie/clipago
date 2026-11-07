@@ -982,6 +982,32 @@ fn open_folder(engine: tauri::State<Engine>) -> Result<()> {
     Ok(())
 }
 #[tauri::command]
+fn open_help_page(page: &str) -> Result<()> {
+    use std::ptr::null;
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+    let url = match page {
+        "github" => "https://github.com/greeeenie/clipago",
+        "docs" => "https://github.com/greeeenie/clipago#readme",
+        _ => return Err("Неизвестная страница".into()),
+    };
+    let url: Vec<u16> = url.encode_utf16().chain([0]).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            null(),
+            url.as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize <= 32 {
+        return Err("Не удалось открыть ссылку в браузере".into());
+    }
+    Ok(())
+}
+#[tauri::command]
 async fn thumbnail(
     engine: tauri::State<'_, Engine>,
     path: PathBuf,
@@ -1248,6 +1274,7 @@ pub fn run() {
             import_video,
             choose_folder,
             open_folder,
+            open_help_page,
             thumbnail,
             prepare_preview,
             audio_track_icons,

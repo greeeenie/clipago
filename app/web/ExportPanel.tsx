@@ -1,6 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {Collapsible} from 'radix-ui';
-import {AudioLines,ChevronDown,LoaderCircle,X} from 'lucide-react';
+import {AudioLines,ChevronDown,Film,Layers,LoaderCircle,SlidersHorizontal,X} from 'lucide-react';
 import {IconButton,Select,Slider,Switch} from './components';
 import {api,withPreset,effectiveConfig,estimatedSize,type Clip,type ExportConfig,type Format,type Snapshot,type Codec} from './api';
 export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,busy,state,mode='save',embedded=false,advancedContent}:{clip:Clip;config:ExportConfig;setConfig:(c:ExportConfig)=>void;start:number;end:number;onClose:()=>void;onExport:()=>void;busy:boolean;state:Snapshot;mode?:'save'|'segment'|'movie';embedded?:boolean;advancedContent?:ReactNode}){
@@ -25,10 +25,10 @@ export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,bu
   return <aside className={`export-panel ${embedded?'embedded':''}`}>
     {!embedded&&<header className="panel-header"><h2>{mode==='movie'?'Экспорт':mode==='segment'?'Фрагмент':'Обработка'}</h2><IconButton label="Закрыть параметры" onClick={onClose}><X size={16}/></IconButton></header>}
     <div className="export-scroll"><fieldset disabled={busy}>
-      {mode!=='segment'&&<div className="field"><label>Формат</label><div className="segments formats">{(['Mp4','Mkv','Webm','Gif'] as const).map(format=><button key={format} className={config.encoding.format===format?'active':''} onClick={()=>changeFormat(format)}>{format==='Webm'?'WebM':format.toUpperCase()}</button>)}</div></div>}
-      <div className="field"><label>Сжатие</label><div className="segments compression">{([{value:'copy',label:'Без сжатия'},{value:'balanced',label:'Баланс'},{value:'compact',label:'Компактно'}] as const).map(preset=><button key={preset.value} className={config.preset===preset.value?'active':''} disabled={preset.value==='copy'&&(gif||webm||mode!=='save')} title={preset.value==='copy'?'Исходные потоки без перекодирования. Обрезка — по ключевым кадрам. MP4/MKV.':undefined} onClick={()=>setConfig(withPreset(config,preset.value,clip))}>{preset.label}</button>)}</div></div>
+      {mode!=='segment'&&<div className="field"><label className="export-section-label"><Film size={15} aria-hidden="true"/>Формат</label><div className="segments formats">{(['Mp4','Mkv','Webm','Gif'] as const).map(format=><button key={format} className={config.encoding.format===format?'active':''} onClick={()=>changeFormat(format)}>{format==='Webm'?'WebM':format.toUpperCase()}</button>)}</div></div>}
+      <div className="field"><label className="export-section-label"><Layers size={15} aria-hidden="true"/>Сжатие</label><div className="segments compression">{([{value:'copy',label:'Без сжатия'},{value:'balanced',label:'Баланс'},{value:'compact',label:'Компактно'}] as const).map(preset=><button key={preset.value} className={config.preset===preset.value?'active':''} disabled={preset.value==='copy'&&(gif||webm||mode!=='save')} title={preset.value==='copy'?'Исходные потоки без перекодирования. Обрезка — по ключевым кадрам. MP4/MKV.':undefined} onClick={()=>setConfig(withPreset(config,preset.value,clip))}>{preset.label}</button>)}</div></div>
       {!gif&&<div className="rate-summary">≈ {estimated.toFixed(1)} МБ</div>}
-      {showAudio&&<div className="field audio-tracks"><label>Звук</label>{groups.map(({name,indices})=>{
+      {showAudio&&<div className="field audio-tracks"><label className="export-section-label"><AudioLines size={15} aria-hidden="true"/>Звук</label>{groups.map(({name,indices})=>{
         const icon=audioIcons?.path===clip.path?audioIcons.icons[name]:undefined;
         return <div className="audio-track" key={name}>
           {icon?<img className="audio-track-icon" src={icon} alt=""/>:<AudioLines className="audio-track-icon" aria-hidden="true"/>}
@@ -36,7 +36,7 @@ export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,bu
           <Switch label={name} disabled={busy} value={indices.every(i=>config.audioTracks.includes(i))} onChange={enabled=>setConfig({...config,audioTracks:enabled?[...new Set([...config.audioTracks,...indices])]:config.audioTracks.filter(i=>!indices.includes(i))})}/>
         </div>;
       })}</div>}
-      <Collapsible.Root className="advanced export-advanced"><Collapsible.Trigger className="disclosure">Дополнительно<ChevronDown size={14}/></Collapsible.Trigger><Collapsible.Content className="advanced-content">
+      <Collapsible.Root className="advanced export-advanced"><Collapsible.Trigger className="disclosure"><SlidersHorizontal size={15} aria-hidden="true"/>Дополнительно<ChevronDown size={14} aria-hidden="true"/></Collapsible.Trigger><Collapsible.Content className="advanced-content">
         {advancedContent}
         {hardware&&!webm&&!gif&&<div className="setting-row gpu-row"><label>Кодировать на GPU</label><Switch value={config.encoding.hardware} label="Кодировать на видеокарте" disabled={copy||config.quality==='Target'} onChange={value=>setConfig({...config,preset:mode==='segment'?'custom':config.preset,encoding:{...config.encoding,hardware:value}})}/></div>}
         <><div className="field"><label>Разрешение</label><Select value={config.height===null?'original':String(config.height)} disabled={copy} label="Разрешение экспорта" onChange={v=>setConfig({...config,height:v==='original'?null:Number(v)})} options={[{value:'original',label:`Исходное (${clip.width} × ${clip.height})`},...[2160,1440,1080,720,480].filter(h=>h<clip.height).map(h=>({value:String(h),label:`${h}p`}))]}/></div><div className="field"><label>Частота кадров</label><Select value={config.encoding.fps===null?'original':String(config.encoding.fps)} disabled={copy} label="FPS экспорта" onChange={v=>setConfig({...config,encoding:{...config.encoding,fps:v==='original'?null:Number(v)}})} options={[...(!gif?[{value:'original',label:`Исходная (${Math.round(clip.fps)} FPS)`}]:[]),...[15,24,30,60].map(fps=>({value:String(fps),label:`${fps} FPS`}))]}/></div></>
