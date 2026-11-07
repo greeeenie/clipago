@@ -4,10 +4,11 @@ import {Timeline,type Selection} from './Timeline';
 import {IconButton,Slider} from './components';
 import {api,fileUrl,time,type Clip} from './api';
 import {usePreviewAudio} from './usePreviewAudio';
+import {defaultEditorHotkeys,keyCombination} from './editorHotkeys';
 import {listen} from '@tauri-apps/api/event';
 
-export type PreviewProps={clip:Clip;selection:Selection;onChange:(s:Selection)=>void;compact?:boolean;busy?:boolean;suspended?:boolean;onSave?:()=>void;audioTracks?:number[];autoPlay?:boolean;onRangeEnd?:()=>void;onViewed?:()=>void;showTimeline?:boolean;displayTime?:{cursor:number;duration:number};onPlaybackChange?:(playing:boolean)=>void;keyboardPlayback?:boolean};
-export function VideoPreview({clip,selection,onChange,compact=false,busy=false,suspended=false,onSave,audioTracks,autoPlay=false,onRangeEnd,onViewed,showTimeline=true,displayTime,onPlaybackChange,keyboardPlayback=true}:PreviewProps){
+export type PreviewProps={clip:Clip;selection:Selection;onChange:(s:Selection)=>void;compact?:boolean;busy?:boolean;suspended?:boolean;onSave?:()=>void;audioTracks?:number[];autoPlay?:boolean;onRangeEnd?:()=>void;onViewed?:()=>void;showTimeline?:boolean;displayTime?:{cursor:number;duration:number};onPlaybackChange?:(playing:boolean)=>void;keyboardPlayback?:boolean;playHotkey?:string};
+export function VideoPreview({clip,selection,onChange,compact=false,busy=false,suspended=false,onSave,audioTracks,autoPlay=false,onRangeEnd,onViewed,showTimeline=true,displayTime,onPlaybackChange,keyboardPlayback=true,playHotkey=defaultEditorHotkeys.play}:PreviewProps){
   const video=useRef<HTMLVideoElement>(null);const host=useRef<HTMLDivElement>(null);const [bounds,setBounds]=useState({width:640,height:480});
   const [playing,setPlaying]=useState(false);const [muted,setMuted]=useState(false);const [src,setSrc]=useState(()=>fileUrl(clip.path));const [preparing,setPreparing]=useState(false);const [failure,setFailure]=useState('');const fallback=useRef(false);const latest=useRef(selection);latest.current=selection;
   const [volume,setVolume]=useState(()=>{try{const stored=localStorage.getItem('rewind.preview.volume');const value=stored===null?1:Number(stored);return Number.isFinite(value)?Math.max(0,Math.min(1,value)):1;}catch{return 1;}});
@@ -23,7 +24,19 @@ export function VideoPreview({clip,selection,onChange,compact=false,busy=false,s
   const toggle=()=>{const el=video.current;if(!el||busy||suspended||preview.loading)return;if(el.paused){if(el.currentTime>=selection.end-.03||el.currentTime<selection.start)el.currentTime=selection.start;onPlaybackChange?.(true);void el.play().catch(()=>{onPlaybackChange?.(false);setFailure('Не удалось воспроизвести видео');});}else{onPlaybackChange?.(false);el.pause();}};
   const seek=(next:Selection)=>{video.current?.pause();if(video.current)video.current.currentTime=next.cursor;onChange(next);};
   useEffect(()=>{const el=video.current;if(el&&!playing&&Math.abs(el.currentTime-selection.cursor)>.001)el.currentTime=selection.cursor;},[selection.cursor,playing]);
-  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(!keyboardPlayback||e.defaultPrevented||suspended)return;const target=e.target as HTMLElement;if(target.closest('input,textarea,[role="combobox"],[role="dialog"]'))return;if(compact&&e.key==='Enter'){e.preventDefault();onSave?.();return;}if(!compact&&target.closest('button,[role="slider"]'))return;if(e.code==='Space'){e.preventDefault();toggle();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);});
+  useEffect(()=>{
+    const key=(e:KeyboardEvent)=>{
+      if(!keyboardPlayback||e.defaultPrevented||e.repeat||suspended)return;
+      const target=e.target instanceof Element?e.target:null;
+      if(target?.closest('input,textarea,select,[contenteditable="true"],[role="combobox"],[role="dialog"]'))return;
+      const combination=keyCombination(e);
+      if(compact&&combination==='Enter'&&playHotkey!=='Enter'){e.preventDefault();onSave?.();return;}
+      if(!compact&&target?.closest('button,[role="slider"]'))return;
+      if(combination===playHotkey){e.preventDefault();toggle();}
+    };
+    window.addEventListener('keydown',key);
+    return()=>window.removeEventListener('keydown',key);
+  });
   useEffect(()=>{if(busy||suspended){preview.cancelResume();video.current?.pause();}},[busy,suspended]);
   useEffect(()=>{if(!playing)return;let id=0;let last=0;const tick=(now:number)=>{const el=video.current;if(!el||el.paused)return;if(el.currentTime>=latest.current.end){el.pause();el.currentTime=latest.current.end;onChange({...latest.current,cursor:latest.current.end});rangeEnd();return;}if(now-last>40){last=now;onChange({...latest.current,cursor:el.currentTime});}id=requestAnimationFrame(tick);};id=requestAnimationFrame(tick);return()=>cancelAnimationFrame(id);},[playing,onChange]);
   useEffect(()=>{const hidden=()=>{if(document.hidden){preview.cancelResume();video.current?.pause();}};document.addEventListener('visibilitychange',hidden);return()=>document.removeEventListener('visibilitychange',hidden);},[]);
