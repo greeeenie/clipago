@@ -2,10 +2,16 @@ import {useEffect,useState,type ReactNode} from 'react';
 import {Collapsible} from 'radix-ui';
 import {AudioLines,ChevronDown,Film,Layers,LoaderCircle,SlidersHorizontal,X} from 'lucide-react';
 import {IconButton,Select,Slider,Switch} from './components';
-import {api,withPreset,effectiveConfig,estimatedSize,type Clip,type ExportConfig,type Format,type Snapshot,type Codec} from './api';
+import {api,withPreset,effectiveConfig,estimatedSize,type Clip,type Compression,type ExportConfig,type Format,type Snapshot,type Codec} from './api';
+
+const compressionLabels:Record<Compression,string>={copy:'Без сжатия',balanced:'Баланс',compact:'Компактно',custom:'Вручную'};
+
 export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,busy,state,mode='save',embedded=false,advancedContent}:{clip:Clip;config:ExportConfig;setConfig:(c:ExportConfig)=>void;start:number;end:number;onClose:()=>void;onExport:()=>void;busy:boolean;state:Snapshot;mode?:'save'|'segment'|'movie';embedded?:boolean;advancedContent?:ReactNode}){
   config=effectiveConfig(clip,config);
   const copy=config.quality==='Copy';const gif=config.encoding.format==='Gif';const webm=config.encoding.format==='Webm';const hardware=state.encoders.some(e=>!['Auto','Cpu'].includes(e));
+  const presets:Compression[]=mode==='save'&&!gif&&!webm?['copy','balanced','compact']:['balanced','compact'];
+  const presetIndex=presets.indexOf(config.preset);
+  const compressionLabel=config.quality==='Target'?'До размера файла':compressionLabels[config.preset];
   const changeFormat=(format:Format)=>{let next={...config,encoding:{...config.encoding,format,codec:(format==='Webm'?'Vp9':config.encoding.codec==='Vp9'?'H264':config.encoding.codec) as Codec}};if(format==='Gif'||format==='Webm'){next.encoding.hardware=false;if(copy||config.quality==='Target')next=withPreset(next,'balanced',clip);}if(format==='Gif'&&next.encoding.fps===null)next.encoding.fps=15;setConfig(next);};
   const estimated=estimatedSize(clip,config,end-start);
   const groups=Array.from(new Set(clip.audio_tracks.map(t=>t.name))).map(name=>({name,indices:clip.audio_tracks.filter(t=>t.name===name).map(t=>t.index)}));
@@ -26,7 +32,10 @@ export function ExportPanel({clip,config,setConfig,start,end,onClose,onExport,bu
     {!embedded&&<header className="panel-header"><h2>{mode==='movie'?'Экспорт':mode==='segment'?'Фрагмент':'Обработка'}</h2><IconButton label="Закрыть параметры" onClick={onClose}><X size={16}/></IconButton></header>}
     <div className="export-scroll"><fieldset disabled={busy}>
       {mode!=='segment'&&<div className="field"><label className="export-section-label"><Film size={15} aria-hidden="true"/>Формат</label><div className="segments formats">{(['Mp4','Mkv','Webm','Gif'] as const).map(format=><button key={format} className={config.encoding.format===format?'active':''} onClick={()=>changeFormat(format)}>{format==='Webm'?'WebM':format.toUpperCase()}</button>)}</div></div>}
-      <div className="field"><label className="export-section-label"><Layers size={15} aria-hidden="true"/>Сжатие</label><div className="segments compression">{([{value:'copy',label:'Без сжатия'},{value:'balanced',label:'Баланс'},{value:'compact',label:'Компактно'}] as const).map(preset=><button key={preset.value} className={config.preset===preset.value?'active':''} disabled={preset.value==='copy'&&(gif||webm||mode!=='save')} title={preset.value==='copy'?'Исходные потоки без перекодирования. Обрезка — по ключевым кадрам. MP4/MKV.':undefined} onClick={()=>setConfig(withPreset(config,preset.value,clip))}>{preset.label}</button>)}</div></div>
+      <div className="field">
+        <div className="compression-heading"><span className="export-section-label"><Layers size={15} aria-hidden="true"/>Сжатие</span><span className="compression-status">{compressionLabel}</span></div>
+        <Slider label="Сжатие" value={presetIndex<0?presets.indexOf('balanced'):presetIndex} valueText={compressionLabel} min={0} max={presets.length-1} disabled={busy} onChange={step=>setConfig(withPreset(config,presets[step],clip))}/>
+      </div>
       {!gif&&<div className="rate-summary">≈ {estimated.toFixed(1)} МБ</div>}
       {showAudio&&<div className="field audio-tracks"><label className="export-section-label"><AudioLines size={15} aria-hidden="true"/>Звук</label>{groups.map(({name,indices})=>{
         const icon=audioIcons?.path===clip.path?audioIcons.icons[name]:undefined;
