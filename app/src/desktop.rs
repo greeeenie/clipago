@@ -1021,9 +1021,52 @@ fn open_folder(engine: tauri::State<Engine>) -> Result<()> {
 }
 
 fn copy_file_to_clipboard(path: &Path) -> Result<()> {
-    arboard::Clipboard::new()
-        .and_then(|mut clipboard| clipboard.set().file_list(&[path]))
-        .map_err(|_| "Не удалось скопировать файл в буфер обмена".into())
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::{
+            Foundation::CLIPBRD_E_CANT_OPEN,
+            System::{
+                Com::IDataObject,
+                Ole::{OleFlushClipboard, OleInitialize, OleSetClipboard, OleUninitialize},
+            },
+            UI::Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName},
+        },
+        core::PCWSTR,
+    };
+
+    let path = std::path::absolute(path).map_err(error)?;
+    if !path.is_file() {
+        return Err("Файл клипа не найден".into());
+    }
+    let path_wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    struct Ole;
+    impl Drop for Ole {
+        fn drop(&mut self) {
+            unsafe { OleUninitialize() };
+        }
+    }
+    let copy = || unsafe {
+        OleInitialize(None)?;
+        let _ole = Ole;
+        let file: IShellItem = SHCreateItemFromParsingName(PCWSTR(path_wide.as_ptr()), None)?;
+        let data: IDataObject = file.BindToHandler(None, &BHID_DataObject)?;
+        let mut retries = 5;
+        loop {
+            match OleSetClipboard(&data) {
+                Err(e) if e.code() == CLIPBRD_E_CANT_OPEN && retries > 0 => {
+                    retries -= 1;
+                    thread::sleep(std::time::Duration::from_millis(20));
+                }
+                result => {
+                    result?;
+                    break;
+                }
+            }
+        }
+        // Materialize the shell data before this worker's OLE apartment closes.
+        OleFlushClipboard()
+    };
+    copy().map_err(|e| format!("Не удалось скопировать файл в буфер обмена: {e}"))
 }
 
 #[tauri::command]
