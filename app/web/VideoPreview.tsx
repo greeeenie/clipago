@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Play,Pause,Volume2,VolumeX,Maximize,LoaderCircle} from 'lucide-react';
+import {Play,Pause,Volume2,VolumeX,Maximize,Minimize,LoaderCircle,ChevronLeft,ChevronRight} from 'lucide-react';
 import {Timeline,type Selection} from './Timeline';
 import {IconButton,Slider} from './components';
 import {api,fileUrl,time,type Clip} from './api';
@@ -7,8 +7,8 @@ import {usePreviewAudio} from './usePreviewAudio';
 import {defaultEditorHotkeys,keyCombination} from './editorHotkeys';
 import {listen} from '@tauri-apps/api/event';
 
-export type PreviewProps={clip:Clip;selection:Selection;onChange:(s:Selection)=>void;compact?:boolean;busy?:boolean;suspended?:boolean;onSave?:()=>void;audioTracks?:number[];autoPlay?:boolean;onRangeEnd?:()=>void;onViewed?:()=>void;showTimeline?:boolean;displayTime?:{cursor:number;duration:number};onPlaybackChange?:(playing:boolean)=>void;keyboardPlayback?:boolean;playHotkey?:string};
-export function VideoPreview({clip,selection,onChange,compact=false,busy=false,suspended=false,onSave,audioTracks,autoPlay=false,onRangeEnd,onViewed,showTimeline=true,displayTime,onPlaybackChange,keyboardPlayback=true,playHotkey=defaultEditorHotkeys.play}:PreviewProps){
+export type PreviewProps={clip:Clip;selection:Selection;onChange:(s:Selection)=>void;compact?:boolean;busy?:boolean;suspended?:boolean;onSave?:()=>void;audioTracks?:number[];autoPlay?:boolean;onRangeEnd?:()=>void;onViewed?:()=>void;showTimeline?:boolean;displayTime?:{cursor:number;duration:number};onPlaybackChange?:(playing:boolean)=>void;keyboardPlayback?:boolean;playHotkey?:string;navigation?:{previous?:()=>void;next?:()=>void};fullscreen?:boolean;onFullscreen?:()=>void};
+export function VideoPreview({clip,selection,onChange,compact=false,busy=false,suspended=false,onSave,audioTracks,autoPlay=false,onRangeEnd,onViewed,showTimeline=true,displayTime,onPlaybackChange,keyboardPlayback=true,playHotkey=defaultEditorHotkeys.play,navigation,fullscreen,onFullscreen}:PreviewProps){
   const video=useRef<HTMLVideoElement>(null);const host=useRef<HTMLDivElement>(null);const [bounds,setBounds]=useState({width:640,height:480});
   const [playing,setPlaying]=useState(false);const [muted,setMuted]=useState(false);const [src,setSrc]=useState(()=>fileUrl(clip.path));const [preparing,setPreparing]=useState(false);const [failure,setFailure]=useState('');const fallback=useRef(false);const latest=useRef(selection);latest.current=selection;
   const [volume,setVolume]=useState(()=>{try{const stored=localStorage.getItem('rewind.preview.volume');const value=stored===null?1:Number(stored);return Number.isFinite(value)?Math.max(0,Math.min(1,value)):1;}catch{return 1;}});
@@ -30,7 +30,7 @@ export function VideoPreview({clip,selection,onChange,compact=false,busy=false,s
       const target=e.target instanceof Element?e.target:null;
       if(target?.closest('input,textarea,select,[contenteditable="true"],[role="combobox"],[role="dialog"]'))return;
       const combination=keyCombination(e);
-      if(compact&&combination==='Enter'&&playHotkey!=='Enter'){e.preventDefault();onSave?.();return;}
+      if(compact&&combination==='Enter'&&playHotkey!=='Enter'&&(!target?.closest('button')||target.closest('[role="slider"]'))){e.preventDefault();onSave?.();return;}
       if(!compact&&target?.closest('button,[role="slider"]'))return;
       if(combination===playHotkey){e.preventDefault();toggle();}
     };
@@ -51,10 +51,14 @@ export function VideoPreview({clip,selection,onChange,compact=false,busy=false,s
       </div>
       <div className="player-controls">
         <IconButton label={playing?'Пауза':'Воспроизвести'} onClick={toggle}>{playing?<Pause size={16}/>:<Play size={16}/>}</IconButton>
+        {navigation&&<div className="clip-navigation">
+          <IconButton label="Предыдущий клип" disabled={busy||!navigation.previous} onClick={navigation.previous}><ChevronLeft size={17}/></IconButton>
+          <IconButton label="Следующий клип" disabled={busy||!navigation.next} onClick={navigation.next}><ChevronRight size={17}/></IconButton>
+        </div>}
         <span className="player-time">{time(displayTime?.cursor??selection.cursor)} <span>/ {time(displayTime?.duration??clip.duration)}</span></span>
         <span className="spacer"/>
         <div className="player-volume"><IconButton label={muted||volume===0?'Включить звук':'Выключить звук'} disabled={!clip.has_audio} onClick={toggleMute}>{muted||volume===0?<VolumeX size={16}/>:<Volume2 size={16}/>}</IconButton><Slider label="Громкость предпросмотра" value={muted?0:Math.round(volume*100)} min={0} max={100} onChange={changeVolume}/><output aria-hidden="true">{muted?0:Math.round(volume*100)}%</output></div>
-        <IconButton label="Полный экран" onClick={()=>void video.current?.requestFullscreen().catch(()=>{})}><Maximize size={15}/></IconButton>
+        <IconButton label={fullscreen?'Выйти из полноэкранного режима':'Полный экран'} onClick={onFullscreen??(()=>void video.current?.requestFullscreen().catch(()=>{}))}>{fullscreen?<Minimize size={15}/>:<Maximize size={15}/>}</IconButton>
       </div>
       {showTimeline&&<Timeline clip={clip} selection={selection} onChange={seek} compact={compact} disabled={busy}/>}
     </div>

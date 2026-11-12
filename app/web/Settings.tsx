@@ -57,8 +57,8 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
     setResetting(true);
     try{
       const defaults=await api.defaultSettings();
-      const {buffer_seconds,fps,monitor,encoder,output_dir,system_audio,shortcut,editor_hotkeys}=defaults;
-      await save({...draft,...(section.id==='hotkeys'?{shortcut,editor_hotkeys}:{buffer_seconds,fps,monitor,encoder,output_dir,system_audio})});
+      const {buffer_seconds,fps,monitor,encoder,output_dir,system_audio,microphone,shortcut,editor_hotkeys}=defaults;
+      await save({...draft,...(section.id==='hotkeys'?{shortcut,editor_hotkeys}:{buffer_seconds,fps,monitor,encoder,output_dir,system_audio,microphone})});
     }catch(e){
       onError(String(e));
     }finally{
@@ -94,6 +94,7 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
             <div className="settings-card">
               <div className="setting-row"><span>Фоновая запись</span><Switch value={state.recording} label="Фоновая запись" disabled={state.transitioning} onChange={value=>api.record(value).catch(e=>onError(String(e)))}/></div>
               <div className="setting-row"><span>Системный звук</span><Switch value={draft.system_audio} label="Системный звук" onChange={system_audio=>save({...draft,system_audio})}/></div>
+              <div className="setting-row"><span>Микрофон</span><Switch value={!!draft.microphone} label="Микрофон" onChange={microphone=>save({...draft,microphone})}/></div>
               <div className="setting-row"><span>Папка клипов</span><button className="folder-picker" aria-label="Выбрать папку клипов" title={draft.output_dir} onClick={()=>api.chooseFolder().then(path=>{if(path)save({...draft,output_dir:path});}).catch(e=>onError(String(e)))}><span>{draft.output_dir}</span><FolderOpen size={15} aria-hidden="true"/></button></div>
               <div className="buffer-setting">
                 <div className="setting-heading"><span>Длина буфера</span><output>{draft.buffer_seconds} с</output></div>

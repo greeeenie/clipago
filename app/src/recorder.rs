@@ -1,5 +1,5 @@
 use crate::{
-    audio::AudioSnapshot,
+    audio::{AudioRecorder, AudioSnapshot},
     audio_apps::ApplicationAudio,
     media::{self, WorkDir},
     replay::{REPLAY_BYTE_LIMIT, ReplayBuffer, ReplaySnapshot, TS_PACKET_SIZE},
@@ -27,6 +27,7 @@ pub enum Request {
         seconds: u32,
         output_dir: PathBuf,
         system_audio: bool,
+        microphone: bool,
     },
     Save,
     Shutdown,
@@ -40,6 +41,7 @@ pub enum Event {
     CaptureFailed { message: String, temporary: bool },
     Error(String),
     AudioState(std::result::Result<(), String>),
+    MicrophoneUnavailable,
 }
 
 /// Desktop transitions invalidate DXGI duplication; recreate it instead of
@@ -723,6 +725,8 @@ fn worker(
     let mut replay: Option<Arc<Mutex<ReplayBuffer>>> = None;
     let mut recording_settings: Option<Settings> = None;
     let mut applications: Option<ApplicationAudio> = None;
+    let mut microphone: Option<AudioRecorder> = None;
+    let mut microphone_failed = false;
     let mut recording_encoder = Encoder::Cpu;
     let mut graphics_support: Option<(String, bool)> = None;
     let saving = Arc::new(AtomicBool::new(false));
@@ -783,6 +787,7 @@ fn worker(
                 replay = None;
                 recording_settings = None;
                 applications = None;
+                microphone = None;
                 last_buffer = -1.0;
                 emit(Event::Stopped);
             }
@@ -790,6 +795,7 @@ fn worker(
                 seconds,
                 output_dir,
                 system_audio,
+                microphone: record_microphone,
             }) => {
                 if !system_audio {
                     applications = None;
@@ -806,6 +812,7 @@ fn worker(
                     settings.buffer_seconds = seconds;
                     settings.output_dir = output_dir.clone();
                     settings.system_audio = system_audio;
+                    settings.microphone = record_microphone;
                 }
                 if let Some(active) = &mut session {
                     active.settings.buffer_seconds = seconds;
@@ -825,12 +832,19 @@ fn worker(
                             let duration =
                                 (snapshot.duration * snapshot.fps as f64).round().max(1.0)
                                     / snapshot.fps as f64;
+                            let mut tracks = applications
+                                .as_ref()
+                                .map(|a| a.snapshots(snapshot.end_time, duration))
+                                .unwrap_or_default();
+                            if let Some(capture) = &microphone {
+                                let audio = capture.snapshot(snapshot.end_time, duration);
+                                if audio.is_audible() {
+                                    tracks.push(("Микрофон".to_owned(), audio));
+                                }
+                            }
                             let options = SaveOptions {
                                 encoder: recording_encoder,
-                                tracks: applications
-                                    .as_ref()
-                                    .map(|a| a.snapshots(snapshot.end_time, duration))
-                                    .unwrap_or_default(),
+                                tracks,
                                 // A system-wide mix would bypass the Steam exclusion.
                                 audio: None,
                             };
@@ -864,6 +878,32 @@ fn worker(
             while let Ok(state) = capture.events.try_recv() {
                 emit(Event::AudioState(state));
             }
+        }
+        if let Some(settings) = recording_settings
+            .as_ref()
+            .filter(|s| s.microphone && session.is_some())
+        {
+            if microphone.is_none() && !microphone_failed {
+                match AudioRecorder::microphone() {
+                    Ok(capture) => microphone = Some(capture),
+                    Err(_) => {
+                        emit(Event::MicrophoneUnavailable);
+                        microphone_failed = true;
+                    }
+                }
+            }
+            if let Some(capture) = &microphone {
+                capture.set_seconds(settings.buffer_seconds);
+                while let Ok(status) = capture.events.try_recv() {
+                    if status.is_err() && !microphone_failed {
+                        emit(Event::MicrophoneUnavailable);
+                    }
+                    microphone_failed = status.is_err();
+                }
+            }
+        } else {
+            microphone = None;
+            microphone_failed = false;
         }
         if let Some(active) = &mut session
             && (active.child.try_wait().is_ok_and(|status| status.is_some())

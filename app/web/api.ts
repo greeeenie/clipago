@@ -1,8 +1,8 @@
 import {invoke, convertFileSrc} from '@tauri-apps/api/core';
 export type Encoder='Auto'|'Nvidia'|'Intel'|'Amd'|'Cpu';
 export type EditorHotkeys={split:string;duplicate:string;delete:string;snapping:string;inspector:string;export:string;undo:string;redo:string;play:string;zoom_in:string;zoom_out:string};
-export type Settings={buffer_seconds:number;fps:number;monitor:number;encoder:Encoder;output_dir:string;ffmpeg:string;ffprobe:string;shortcut:string;system_audio:boolean;editor_hotkeys?:EditorHotkeys};
-export type Clip={path:string;duration:number;width:number;height:number;bytes:number;has_audio:boolean;audio_tracks:{index:number;name:string}[];audio_mix_index:number|null;source:string|null;fps:number;aspect_ratio:number;original_path:string|null;viewed:boolean;is_movie:boolean};
+export type Settings={buffer_seconds:number;fps:number;monitor:number;encoder:Encoder;output_dir:string;ffmpeg:string;ffprobe:string;shortcut:string;system_audio:boolean;microphone?:boolean;editor_hotkeys?:EditorHotkeys};
+export type Clip={path:string;duration:number;width:number;height:number;bytes:number;has_audio:boolean;audio_tracks:{index:number;name:string}[];audio_mix_index:number|null;source:string|null;fps:number;aspect_ratio:number;original_path:string|null;title?:string|null;viewed:boolean;is_movie:boolean};
 export type Snapshot={profile_id?:string;settings:Settings;recording:boolean;transitioning:boolean;replay_status?:'stopped'|'warming'|'ready'|'saving';encoders:Encoder[];monitors:{index:number;name:string}[];error:string|null;quick:Clip[]};
 export type Format='Mp4'|'Mkv'|'Webm'|'Gif';
 export type Codec='H264'|'Hevc'|'Vp9';
@@ -20,6 +20,7 @@ export const api={
   record:(enabled:boolean)=>invoke('set_recording',{enabled}),
   saveReplay:()=>invoke('save_replay'),
   folder:()=>invoke('open_folder'),
+  revealClip:(path:string)=>invoke('reveal_clip',{path}),
   openHelp:(page:'github'|'docs')=>invoke<void>('open_help_page',{page}),
   chooseFolder:()=>invoke<string|null>('choose_folder'),
   dismiss:()=>invoke('dismiss_error'),
@@ -30,12 +31,13 @@ export const api={
   cancel:()=>invoke('cancel_export'),
   quick:(path:string)=>invoke('show_quick_clip',{path}),
   importPaths:(paths:string[])=>invoke<Clip[]>('import_paths',{paths}),
-  export:(clip:Clip,start:number,end:number,config:ExportConfig)=>invoke<Clip|null>('export_video',{request:{path:clip.path,start,end,...renderConfig(clip,config)}}),
+  export:(clip:Clip,start:number,end:number,config:ExportConfig,title?:string,copy=false)=>invoke<Clip|null>('export_video',{request:{path:clip.path,start,end,...renderConfig(clip,config)},title,copy}),
 };
 export const fileUrl=convertFileSrc;
 export const filename=(path:string)=>path.split(/[\\/]/).pop()||path;
 const replayDate=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'});
 export function clipTitle(clip:Clip){
+  if(clip.title)return clip.title;
   const name=filename(clip.original_path??clip.path);
   const dot=name.lastIndexOf('.');
   const stem=dot>0?name.slice(0,dot):name;

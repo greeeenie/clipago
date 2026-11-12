@@ -112,6 +112,7 @@ pub struct Settings {
     pub ffprobe: String,
     pub shortcut: ReplayShortcut,
     pub system_audio: bool,
+    pub microphone: bool,
     pub editor_hotkeys: Box<EditorHotkeys>,
 }
 
@@ -130,6 +131,7 @@ impl Default for Settings {
             ffprobe: "ffprobe".into(),
             shortcut: ReplayShortcut::default(),
             system_audio: true,
+            microphone: false,
             editor_hotkeys: Box::default(),
         }
     }

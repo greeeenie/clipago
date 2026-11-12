@@ -59,6 +59,11 @@
 .version-switch{display:flex;gap:4px;background:var(--surface);padding:4px;border-radius:8px;max-width:280px;overflow:auto}
 .version-switch>button{height:26px;padding:0 12px;font-size:11px;white-space:nowrap;border-radius:4px;color:var(--muted)}
 .version-switch>button.active{background:var(--raised);color:var(--text)}
+.version-switch>button{flex-shrink:0;max-width:128px;overflow:hidden;text-overflow:ellipsis}
+.clip-player{display:flex;flex:1;min-width:0;min-height:0}
+.clip-player:fullscreen{background:#070708}
+.clip-player:fullscreen .editor-workspace{padding:12px 24px}
+.clip-navigation{display:flex;align-items:center;flex-shrink:0;gap:2px}
 .editor-workspace{display:flex;align-items:center;justify-content:center;flex:1;min-width:0;min-height:0;padding:0 24px 16px;overflow:hidden}
 .editor-stack{display:flex;flex-direction:column;max-width:100%;min-width:0;flex-shrink:0;container-type:inline-size}
 .video-box{position:relative;background:#070708;border:1px solid var(--line);border-radius:10px;overflow:hidden;width:100%;flex-shrink:0}
@@ -269,7 +274,9 @@
 .quick-editor .player-volume output{display:none}
 .timeline.compact .timeline-track{height:42px}
 .quick-footer{padding:12px;flex-shrink:0}
-.quick-footer>.primary-button{width:100%;height:36px}
+.quick-save-row{display:flex;align-items:center;gap:8px}
+.quick-save-row>input{flex:1;height:36px;width:0}
+.quick-save-row>button{padding:0 10px}
 .quick-footer .save-actions{justify-content:space-between}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);border:1px solid #45454d;border-radius:8px;background:#25252b;color:#eeeef2;padding:10px 16px;font-size:12px;z-index:3000;max-width:calc(100vw - 32px)}
 .error-toast{background:#2c2023;border-color:#67434c;color:#f1cbd2;display:flex;align-items:flex-start;gap:12px;max-height:180px;overflow:auto}

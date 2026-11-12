@@ -130,14 +130,25 @@ pub struct AudioRecorder {
     stop: Arc<native::Event>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
+
+#[derive(Clone, Copy)]
+enum CaptureTarget {
+    Output,
+    Process(u32),
+    Microphone,
+}
+
 impl AudioRecorder {
     pub fn new() -> Result<Self> {
-        Self::target(None)
+        Self::target(CaptureTarget::Output)
     }
     pub fn for_process(pid: u32) -> Result<Self> {
-        Self::target(Some(pid))
+        Self::target(CaptureTarget::Process(pid))
     }
-    fn target(pid: Option<u32>) -> Result<Self> {
+    pub fn microphone() -> Result<Self> {
+        Self::target(CaptureTarget::Microphone)
+    }
+    fn target(target: CaptureTarget) -> Result<Self> {
         let ring = Arc::new(Mutex::new(Ring::default()));
         let (tx, events) = mpsc::channel();
         #[cfg(windows)]
@@ -145,7 +156,7 @@ impl AudioRecorder {
             let stop = Arc::new(native::Event::new()?);
             let flag = stop.clone();
             let data = ring.clone();
-            let worker = std::thread::spawn(move || native::run(data, flag, tx, pid));
+            let worker = std::thread::spawn(move || native::run(data, flag, tx, target));
             Ok(Self {
                 ring,
                 events,
@@ -243,6 +254,7 @@ mod native {
     #[implement(IMMNotificationClient)]
     struct Notifications {
         changed: Arc<Event>,
+        flow: EDataFlow,
     }
     impl IMMNotificationClient_Impl for Notifications_Impl {
         fn OnDefaultDeviceChanged(
@@ -251,7 +263,7 @@ mod native {
             role: ERole,
             _: &PCWSTR,
         ) -> windows::core::Result<()> {
-            if flow == eRender && role == eMultimedia {
+            if flow == self.flow && role == eMultimedia {
                 self.changed.signal();
             }
             Ok(())
@@ -344,15 +356,25 @@ mod native {
         stop: &Event,
         changed: &Event,
         tx: &mpsc::Sender<std::result::Result<(), String>>,
-        pid: Option<u32>,
+        target: CaptureTarget,
     ) -> Result<bool> {
         unsafe {
-            let client: IAudioClient = if let Some(pid) = pid {
-                process_client(pid, stop)?
-            } else {
-                enumerator
-                    .GetDefaultAudioEndpoint(eRender, eMultimedia)?
-                    .Activate(CLSCTX_ALL, None)?
+            let (client, loopback): (IAudioClient, u32) = match target {
+                CaptureTarget::Process(pid) => {
+                    (process_client(pid, stop)?, AUDCLNT_STREAMFLAGS_LOOPBACK)
+                }
+                CaptureTarget::Output => (
+                    enumerator
+                        .GetDefaultAudioEndpoint(eRender, eMultimedia)?
+                        .Activate(CLSCTX_ALL, None)?,
+                    AUDCLNT_STREAMFLAGS_LOOPBACK,
+                ),
+                CaptureTarget::Microphone => (
+                    enumerator
+                        .GetDefaultAudioEndpoint(eCapture, eMultimedia)?
+                        .Activate(CLSCTX_ALL, None)?,
+                    0,
+                ),
             };
             let format = WAVEFORMATEX {
                 wFormatTag: 3,
@@ -365,7 +387,7 @@ mod native {
             };
             client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
-                AUDCLNT_STREAMFLAGS_LOOPBACK
+                loopback
                     | AUDCLNT_STREAMFLAGS_EVENTCALLBACK
                     | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
                     | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
@@ -443,7 +465,7 @@ mod native {
         ring: Arc<Mutex<Ring>>,
         stop: Arc<Event>,
         tx: mpsc::Sender<std::result::Result<(), String>>,
-        pid: Option<u32>,
+        target: CaptureTarget,
     ) {
         let result = (|| -> Result<()> {
             unsafe {
@@ -482,11 +504,16 @@ mod native {
                 let changed = Arc::new(Event::new()?);
                 let notification: IMMNotificationClient = Notifications {
                     changed: changed.clone(),
+                    flow: if matches!(target, CaptureTarget::Microphone) {
+                        eCapture
+                    } else {
+                        eRender
+                    },
                 }
                 .into();
                 enumerator.RegisterEndpointNotificationCallback(&notification)?;
                 loop {
-                    match capture(&enumerator, &ring, &stop, &changed, &tx, pid) {
+                    match capture(&enumerator, &ring, &stop, &changed, &tx, target) {
                         Ok(false) => break,
                         Ok(true) => continue,
                         Err(e) => {

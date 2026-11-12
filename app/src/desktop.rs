@@ -502,6 +502,7 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                                             seconds: next.buffer_seconds,
                                             output_dir: next.output_dir,
                                             system_audio: next.system_audio,
+                                            microphone: next.microphone,
                                         });
                                     }
                                 }
@@ -599,6 +600,9 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
                         saving = false;
                         worker_engine.0.state.lock().unwrap().error = Some(e);
                         publish_state(&worker_engine, &handle);
+                    }
+                    recorder::Event::MicrophoneUnavailable => {
+                        notify(&handle, "Микрофон недоступен. Запись видео продолжается.");
                     }
                     recorder::Event::AudioState(result) => {
                         let mut state = worker_engine.0.state.lock().unwrap();
@@ -987,6 +991,22 @@ fn open_folder(engine: tauri::State<Engine>) -> Result<()> {
     Ok(())
 }
 #[tauri::command]
+fn reveal_clip(engine: tauri::State<Engine>, path: PathBuf) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    let clip = engine.clip(&path)?;
+    if !clip.path.is_file() {
+        return Err("Файл клипа не найден".into());
+    }
+    let mut selection = std::ffi::OsString::from("/select,\"");
+    selection.push(&clip.path);
+    selection.push("\"");
+    media::command("explorer.exe")
+        .raw_arg(selection)
+        .spawn()
+        .map_err(error)?;
+    Ok(())
+}
+#[tauri::command]
 fn open_help_page(page: &str) -> Result<()> {
     use std::ptr::null;
     use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
@@ -1160,6 +1180,8 @@ async fn export_video(
     window: tauri::WebviewWindow,
     engine: tauri::State<'_, Engine>,
     request: ExportRequest,
+    title: Option<String>,
+    copy: Option<bool>,
 ) -> Result<Option<Clip>> {
     let engine = engine.inner().clone();
     let clip = engine.clip(&request.path)?;
@@ -1187,12 +1209,26 @@ async fn export_video(
         let settings = engine.0.state.lock().unwrap().settings.clone();
         let format = request.encoding.format;
         let source_path = clip.path.clone();
-        let stem = clip.path.file_stem().unwrap_or_default().to_string_lossy();
-        let output = media::unique_path(
-            &settings.output_dir,
-            &format!("{stem}_edit"),
-            format.extension(),
-        );
+        let title = title
+            .map(|name| name.trim().chars().take(80).collect::<String>())
+            .filter(|name| !name.is_empty());
+        let named_stem = title.as_ref().map(|name| {
+            name.chars()
+                .map(|c| {
+                    if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect::<String>()
+        });
+        let stem = named_stem.unwrap_or_else(|| {
+            let original = clip.original_path.as_ref().unwrap_or(&clip.path);
+            let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+            format!("{}_edit", stem.chars().take(80).collect::<String>())
+        });
+        let output = media::unique_path(&settings.output_dir, &stem, format.extension());
         let job = Export {
             clip,
             output,
@@ -1211,12 +1247,25 @@ async fn export_video(
             .catalog
             .lock()
             .unwrap()
-            .edited(&output, &source_path)
+            .edited(&output, &source_path, title)
             .map_err(error)?;
         let saved = engine.add_clip(&app, &output)?;
         engine.refresh_library(&app);
         let _ = app.emit("clip-added", &saved);
-        notify(&app, "Копия сохранена");
+        if copy.unwrap_or(false) {
+            #[cfg(windows)]
+            let copied = arboard::Clipboard::new()
+                .and_then(|mut clipboard| clipboard.set().file_list(&[&output]))
+                .is_ok();
+            #[cfg(not(windows))]
+            let copied = false;
+            if !copied {
+                return Err("Клип сохранён. Буфер обмена недоступен.".into());
+            }
+            notify(&app, "Клип скопирован");
+        } else {
+            notify(&app, "Копия сохранена");
+        }
         if window.label() == "quick" {
             let app_handle = app.clone();
             let _ = app.run_on_main_thread(move || {
@@ -1280,6 +1329,7 @@ pub fn run() {
             import_video,
             choose_folder,
             open_folder,
+            reveal_clip,
             open_help_page,
             thumbnail,
             prepare_preview,

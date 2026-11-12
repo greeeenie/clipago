@@ -12,6 +12,8 @@ struct Entry {
     viewed: bool,
     #[serde(default)]
     movie: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
 }
 #[derive(Default, Deserialize, Serialize)]
 pub struct Catalog {
@@ -44,6 +46,7 @@ impl Catalog {
             clip.original_path = entry.original.clone();
             clip.viewed = entry.viewed;
             clip.is_movie = entry.movie;
+            clip.title.clone_from(&entry.title);
         }
     }
     pub fn register(&mut self, path: &Path) -> Result<()> {
@@ -53,7 +56,7 @@ impl Catalog {
         }
         Ok(())
     }
-    pub fn edited(&mut self, path: &Path, source: &Path) -> Result<()> {
+    pub fn edited(&mut self, path: &Path, source: &Path, title: Option<String>) -> Result<()> {
         let original = self
             .entries
             .get(source)
@@ -66,6 +69,7 @@ impl Catalog {
                 original: Some(original),
                 viewed: true,
                 movie: false,
+                title,
             },
         );
         self.save()
@@ -77,6 +81,7 @@ impl Catalog {
                 original: None,
                 viewed: true,
                 movie: true,
+                title: None,
             },
         );
         self.save()
@@ -104,8 +109,8 @@ mod tests {
         let mut catalog = Catalog::load(file.clone()).unwrap();
         catalog.register(&raw).unwrap();
         assert!(!catalog.entries[&raw].viewed);
-        catalog.edited(&edit, &raw).unwrap();
-        catalog.edited(&edit2, &edit).unwrap();
+        catalog.edited(&edit, &raw, None).unwrap();
+        catalog.edited(&edit2, &edit, None).unwrap();
         catalog.viewed(&edit).unwrap();
         let loaded = Catalog::load(file).unwrap();
         assert_eq!(loaded.entries[&edit2].original.as_ref(), Some(&raw));

@@ -126,6 +126,7 @@ pub struct Clip {
     pub fps: f64,
     pub aspect_ratio: f32,
     pub original_path: Option<PathBuf>,
+    pub title: Option<String>,
     pub viewed: bool,
     pub is_movie: bool,
 }
@@ -273,6 +274,7 @@ pub fn probe(ffprobe: &str, path: &Path) -> Result<Clip> {
         .collect();
     Ok(Clip {
         original_path: None,
+        title: None,
         viewed: false,
         is_movie: false,
         path: path.to_path_buf(),
