@@ -672,7 +672,7 @@ impl VideoCodec {
     }
 }
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, PartialEq, Deserialize, Serialize)]
 pub struct EncodingOptions {
     pub format: OutputFormat,
     pub codec: VideoCodec,

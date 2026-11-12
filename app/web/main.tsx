@@ -2,7 +2,7 @@ import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {Tabs,Tooltip} from 'radix-ui';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
-import {ArrowLeft,Copy,FolderOpen,LoaderCircle,Minus,Settings,Square,X} from 'lucide-react';
+import {ArrowLeft,Copy,FolderOpen,LoaderCircle,Minus,Pencil,Settings,Square,X} from 'lucide-react';
 import {api,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type MovieProject} from './api';
 import {IconButton,SaveAction} from './components';
 import {Editor} from './Editor';
@@ -26,6 +26,7 @@ export function App(){
  const [project,setProject]=useState<MovieProject>({name:'Новый мувик',segments:[]});const [projectKey,setProjectKey]=useState('');const projectRef=useRef({project,key:projectKey});projectRef.current={project,key:projectKey};
  const scrollPosition=useRef(0);const saving=useRef(false);const captureRequest=useRef(false);
  const [clipName,setClipName]=useState('');
+ const [nameDraft,setNameDraft]=useState<string|null>(null);
  const drafts=useRef(new Map<string,{selection:Selection;config:ExportConfig;name:string}>());const current=useRef({selected,selection,config,clipName});current.current={selected,selection,config,clipName};
  const selectedPath=useRef<string|undefined>(undefined);const visibleError=error||state?.error||'';const hardware=!!state?.encoders.some(e=>!['Auto','Cpu'].includes(e));
  useEffect(()=>{if(!projectKey)return;const timer=globalThis.setTimeout(()=>{try{localStorage.setItem(projectKey,JSON.stringify(project));}catch{setError('Не удалось сохранить проект');}},350);return()=>globalThis.clearTimeout(timer);},[project,projectKey]);
@@ -33,7 +34,7 @@ export function App(){
  const add=useCallback((clip:Clip)=>setClips(items=>[clip,...items.filter(item=>item.path!==clip.path)]),[]);
  const update=useCallback((clip:Clip)=>{setClips(items=>items.map(c=>c.path===clip.path?clip:c));setSelected(c=>c?.path===clip.path?clip:c);},[]);
  const viewed=useCallback((clip:Clip)=>{if(clip.viewed)return;void api.viewed(clip.path).then(saved=>{if(saved)update(saved);}).catch(e=>setError(String(e)));},[update]);
- const select=useCallback((clip:Clip,hardware=false)=>{const prev=current.current;if(prev.selected&&prev.config)drafts.current.set(prev.selected.path,{selection:prev.selection,config:prev.config,name:prev.clipName});const draft=drafts.current.get(clip.path);selectedPath.current=clip.path;setSelected(clip);setSelection(draft?.selection??{start:0,end:clip.duration,cursor:0});setConfig(draft?.config??defaultConfig(clip,hardware));setClipName(draft?.name??'');setView('editor');},[]);
+ const select=useCallback((clip:Clip,hardware=false)=>{const prev=current.current;if(prev.selected&&prev.config)drafts.current.set(prev.selected.path,{selection:prev.selection,config:prev.config,name:prev.clipName});const draft=drafts.current.get(clip.path);selectedPath.current=clip.path;setSelected(clip);setSelection(draft?.selection??{start:0,end:clip.duration,cursor:0});setConfig(draft?.config??defaultConfig(clip,hardware));setClipName(draft?.name??'');setNameDraft(null);setView('editor');},[]);
  useEffect(()=>{
   let live=true;let receivedState=false;const off:Array<()=>void>=[];
   const register=<T,>(name:string,handler:(payload:T)=>void)=>listen<T>(name,event=>{if(live)handler(event.payload);}).then(fn=>live?off.push(fn):fn());
@@ -55,7 +56,7 @@ export function App(){
   if(!quick||!pending)return;
   if(!pending.some(clip=>clip.path===selectedPath.current)){
    if(pending[0])select(pending[0],hardware);
-   else if(selectedPath.current){selectedPath.current=undefined;setSelected(undefined);setConfig(undefined);}
+   else if(selectedPath.current){selectedPath.current=undefined;setSelected(undefined);setConfig(undefined);setNameDraft(null);}
   }
   for(const path of drafts.current.keys()){
    if(!pending.some(clip=>clip.path===path))drafts.current.delete(path);
@@ -67,8 +68,10 @@ export function App(){
  useEffect(()=>{if(hardware)setConfig(c=>c&&c.quality!=='Copy'&&c.quality!=='Target'&&c.encoding.format!=='Webm'&&c.encoding.format!=='Gif'?{...c,encoding:{...c.encoding,hardware:true}}:c);},[hardware,selected?.path]);
  const imported=()=>void api.import().then(clip=>{if(clip){add(clip);select(clip,hardware);}}).catch(e=>setError(String(e)));
  const capture=async()=>{if(!state||captureRequest.current)return;captureRequest.current=true;setCapturing(true);try{if(state.replay_status==='ready'||state.recording)await api.saveReplay();else await api.record(true);}catch(e){setError(String(e));setCapturing(false);captureRequest.current=false;}};
+ const finishName=(value:string)=>{setClipName(value.trim());setNameDraft(null);};
  const saveClip=useCallback(async(copy=false)=>{
   if(!selected||!config||saving.current||busy)return;
+  setError('');
   saving.current=true;setBusy(true);
   try{
    const saved=await api.export(selected,selection.start,selection.end,structuredClone(config),quick?clipName.trim():undefined,copy);
@@ -99,17 +102,29 @@ export function App(){
  }}>
   {!!pending?.length&&<Tabs.List className="quick-tabs" aria-label="Быстрые клипы">
    {pending.map(clip=>{
-    const title=clipTitle(clip);
-    return <Tabs.Trigger key={clip.path} value={clip.path} title={title} disabled={busy}>{title}</Tabs.Trigger>;
+    const active=selected?.path===clip.path;
+    const originalTitle=clipTitle(clip);
+    const title=(active?clipName:drafts.current.get(clip.path)?.name)||originalTitle;
+    return <div key={clip.path} className={`quick-tab${active?' active':''}`}>
+     {active&&nameDraft!==null?<input autoFocus aria-label="Название клипа" placeholder={originalTitle} maxLength={80} value={nameDraft}
+      onFocus={e=>e.currentTarget.select()} onChange={e=>setNameDraft(e.target.value)} onBlur={e=>finishName(e.currentTarget.value)}
+      onKeyDown={e=>{
+       if(e.nativeEvent.isComposing)return;
+       if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}
+       if(e.key==='Escape'){e.preventDefault();setNameDraft(null);}
+      }}/>:<>
+       <Tabs.Trigger value={clip.path} title={title} disabled={busy}>{title}</Tabs.Trigger>
+       {active&&<IconButton label="Изменить название клипа" disabled={busy} onClick={()=>setNameDraft(clipName)}><Pencil size={13}/></IconButton>}
+      </>}
+    </div>;
    })}
   </Tabs.List>}
   {selected?<Tabs.Content value={selected.path} className="quick-body">
    <Editor clip={selected} playHotkey={state?.settings.editor_hotkeys?.play} audioTracks={config?.audioTracks} selection={selection} onChange={setSelection} compact busy={busy} navigation={navigation} onViewed={()=>viewed(selected)} onSave={()=>void saveClip()}/>
   </Tabs.Content>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{busy?action:<div className="quick-save-row">
-   <input aria-label="Название клипа" placeholder="Название клипа" maxLength={80} value={selected?clipName:''} disabled={!selected} onChange={e=>setClipName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing)void saveClip();}}/>
-   <button className="secondary-button" aria-label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip(true)}><Copy size={15}/>Скопировать</button>
    {action}
+   <IconButton label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip(true)}><Copy size={17}/></IconButton>
   </div>}</footer>
  </Tabs.Root>:<>
  <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid clips={clips} onOpen={openClip} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">

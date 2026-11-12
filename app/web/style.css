@@ -263,9 +263,14 @@
 .quick-titlebar .window-actions>button{width:34px}
 .quick-workspace{display:flex;flex-direction:column;flex:1;min-height:0}
 .quick-tabs{display:flex;gap:4px;flex-shrink:0;overflow-x:auto;padding:4px 8px;background:var(--surface);border-bottom:1px solid var(--line);scrollbar-width:thin}
-.quick-tabs>button{flex:0 0 auto;max-width:165px;padding:0 9px;height:26px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
-.quick-tabs>button:hover,.quick-tabs>button[data-state=active]{background:var(--raised);color:var(--text)}
-.quick-tabs>button:focus-visible{outline-offset:-2px}
+.quick-tab{display:flex;align-items:center;flex:0 0 auto;border-radius:6px;height:26px}
+.quick-tab.active,.quick-tab:hover{background:var(--raised)}
+.quick-tab>[role=tab]{max-width:180px;padding:0 9px;height:100%;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
+.quick-tab.active>[role=tab],.quick-tab:hover>[role=tab]{color:var(--text)}
+.quick-tab>.icon-button{width:24px;height:22px;margin-right:2px;border-radius:4px}
+.quick-tab>.icon-button:hover:enabled{background:var(--line-strong)}
+.quick-tab>input{width:204px;height:26px;padding:0 8px;font-size:11px}
+.quick-tab>button:focus-visible,.quick-tab>input:focus-visible{outline-offset:-2px}
 .quick-body{display:flex;flex:1;min-height:0}
 .quick-editor{padding:12px 12px 0}
 .quick-editor .player-controls{height:32px;gap:4px}
@@ -274,10 +279,12 @@
 .quick-editor .player-volume output{display:none}
 .timeline.compact .timeline-track{height:42px}
 .quick-footer{padding:12px;flex-shrink:0}
-.quick-save-row{display:flex;align-items:center;gap:8px}
-.quick-save-row>input{flex:1;height:36px;width:0}
-.quick-save-row>button{padding:0 10px}
+.quick-save-row{display:grid;grid-template-columns:36px minmax(0,240px) 36px;justify-content:center;align-items:center;gap:8px}
+.quick-save-row>.primary-button{grid-column:2}
+.quick-save-row>.icon-button{width:36px;height:36px;background:var(--surface);border:1px solid var(--line-strong)}
+.quick-save-row>.icon-button:hover:enabled{background:var(--raised)}
 .quick-footer .save-actions{justify-content:space-between}
+.quick-app .toast{bottom:60px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);border:1px solid #45454d;border-radius:8px;background:#25252b;color:#eeeef2;padding:10px 16px;font-size:12px;z-index:3000;max-width:calc(100vw - 32px)}
 .error-toast{background:#2c2023;border-color:#67434c;color:#f1cbd2;display:flex;align-items:flex-start;gap:12px;max-height:180px;overflow:auto}
 .error-toast button{padding:0;color:inherit}

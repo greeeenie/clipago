@@ -103,6 +103,7 @@ struct Inner {
     thumbnail_gate: Mutex<()>,
     cache: WorkDir,
     export_busy: AtomicBool,
+    quick_exports: Mutex<HashMap<PathBuf, QuickExport>>,
     preview_busy: AtomicBool,
     shutting_down: AtomicBool,
     cancel: Mutex<Arc<AtomicBool>>,
@@ -408,6 +409,7 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
         thumbnail_gate: Mutex::new(()),
         cache: WorkDir::new(&app.path().app_cache_dir()?, "session")?,
         export_busy: AtomicBool::new(false),
+        quick_exports: Mutex::new(HashMap::new()),
         preview_busy: AtomicBool::new(false),
         shutting_down: AtomicBool::new(false),
         cancel: Mutex::new(Arc::new(AtomicBool::new(false))),
@@ -1160,7 +1162,7 @@ async fn prepare_audio_preview(
     .map_err(error)?
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 struct ExportRequest {
     path: PathBuf,
     start: f64,
@@ -1172,6 +1174,12 @@ struct ExportRequest {
     encoding: EncodingOptions,
     #[serde(default)]
     audio_tracks: Option<Vec<u32>>,
+}
+
+struct QuickExport {
+    request: ExportRequest,
+    title: Option<String>,
+    clip: Clip,
 }
 
 #[tauri::command]
@@ -1198,6 +1206,8 @@ async fn export_video(
     }
     let cancel = Arc::new(AtomicBool::new(false));
     *engine.0.cancel.lock().unwrap() = cancel.clone();
+    let quick = window.label() == "quick";
+    let copy = copy.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
         struct Guard(Engine);
         impl Drop for Guard {
@@ -1207,55 +1217,93 @@ async fn export_video(
         }
         let _guard = Guard(engine.clone());
         let settings = engine.0.state.lock().unwrap().settings.clone();
-        let format = request.encoding.format;
         let source_path = clip.path.clone();
         let title = title
             .map(|name| name.trim().chars().take(80).collect::<String>())
             .filter(|name| !name.is_empty());
-        let named_stem = title.as_ref().map(|name| {
-            name.chars()
-                .map(|c| {
-                    if c.is_control() || "<>:\"/\\|?*".contains(c) {
-                        '_'
-                    } else {
-                        c
-                    }
-                })
-                .collect::<String>()
-        });
-        let stem = named_stem.unwrap_or_else(|| {
-            let original = clip.original_path.as_ref().unwrap_or(&clip.path);
-            let stem = original.file_stem().unwrap_or_default().to_string_lossy();
-            format!("{}_edit", stem.chars().take(80).collect::<String>())
-        });
-        let output = media::unique_path(&settings.output_dir, &stem, format.extension());
-        let job = Export {
-            clip,
-            output,
-            start: request.start,
-            end: request.end,
-            quality: request.quality,
-            bitrate_mbps: request.bitrate_mbps,
-            target_mb: request.target_mb,
-            max_height: request.max_height,
-            encoding: request.encoding,
-            audio_tracks: request.audio_tracks,
+        let cached = quick
+            .then(|| {
+                engine
+                    .0
+                    .quick_exports
+                    .lock()
+                    .unwrap()
+                    .get(&source_path)
+                    .filter(|saved| {
+                        saved.request == request
+                            && saved.title == title
+                            && saved.clip.path.parent() == Some(settings.output_dir.as_path())
+                            && saved.clip.path.is_file()
+                    })
+                    .map(|saved| saved.clip.clone())
+            })
+            .flatten();
+        let saved = if let Some(saved) = cached {
+            saved
+        } else {
+            let named_stem = title.as_ref().map(|name| {
+                name.chars()
+                    .map(|c| {
+                        if c.is_control() || "<>:\"/\\|?*".contains(c) {
+                            '_'
+                        } else {
+                            c
+                        }
+                    })
+                    .collect::<String>()
+            });
+            let stem = named_stem.unwrap_or_else(|| {
+                let original = clip.original_path.as_ref().unwrap_or(&clip.path);
+                let stem = original.file_stem().unwrap_or_default().to_string_lossy();
+                format!("{}_edit", stem.chars().take(80).collect::<String>())
+            });
+            let output = media::unique_path(
+                &settings.output_dir,
+                &stem,
+                request.encoding.format.extension(),
+            );
+            let job = Export {
+                clip,
+                output,
+                start: request.start,
+                end: request.end,
+                quality: request.quality,
+                bitrate_mbps: request.bitrate_mbps,
+                target_mb: request.target_mb,
+                max_height: request.max_height,
+                encoding: request.encoding,
+                audio_tracks: request.audio_tracks.clone(),
+            };
+            let output = media::export(&settings.ffmpeg, &job, cancel).map_err(error)?;
+            engine
+                .0
+                .catalog
+                .lock()
+                .unwrap()
+                .edited(&output, &source_path, title.clone())
+                .map_err(error)?;
+            let saved = engine.add_clip(&app, &output)?;
+            engine.refresh_library(&app);
+            let _ = app.emit("clip-added", &saved);
+            if quick && copy {
+                let state = engine.0.state.lock().unwrap();
+                if state.quick.iter().any(|clip| clip.path == source_path) {
+                    engine.0.quick_exports.lock().unwrap().insert(
+                        source_path.clone(),
+                        QuickExport {
+                            request,
+                            title,
+                            clip: saved.clone(),
+                        },
+                    );
+                }
+            }
+            saved
         };
-        let output = media::export(&settings.ffmpeg, &job, cancel).map_err(error)?;
-        engine
-            .0
-            .catalog
-            .lock()
-            .unwrap()
-            .edited(&output, &source_path, title)
-            .map_err(error)?;
-        let saved = engine.add_clip(&app, &output)?;
-        engine.refresh_library(&app);
-        let _ = app.emit("clip-added", &saved);
-        if copy.unwrap_or(false) {
+        if copy {
             #[cfg(windows)]
             let copied = arboard::Clipboard::new()
-                .and_then(|mut clipboard| clipboard.set().file_list(&[&output]))
+                .and_then(|mut clipboard| clipboard.set().file_list(&[&saved.path]))
                 .is_ok();
             #[cfg(not(windows))]
             let copied = false;
@@ -1263,15 +1311,16 @@ async fn export_video(
                 return Err("Клип сохранён. Буфер обмена недоступен.".into());
             }
             notify(&app, "Клип скопирован");
-        } else {
-            notify(&app, "Копия сохранена");
+            return Ok(Some(saved));
         }
-        if window.label() == "quick" {
+        notify(&app, "Копия сохранена");
+        if quick {
             let app_handle = app.clone();
             let _ = app.run_on_main_thread(move || {
                 let empty = {
                     let mut state = engine.0.state.lock().unwrap();
                     state.quick.retain(|clip| clip.path != source_path);
+                    engine.0.quick_exports.lock().unwrap().remove(&source_path);
                     state.quick.is_empty()
                 };
                 if empty {
@@ -1391,6 +1440,7 @@ pub fn run() {
                 } else if let Some(quick) = window.app_handle().get_webview_window("quick") {
                     let engine = window.state::<Engine>();
                     engine.0.state.lock().unwrap().quick.clear();
+                    engine.0.quick_exports.lock().unwrap().clear();
                     hide_quick(&quick);
                     publish_state(&engine, window.app_handle());
                 }
