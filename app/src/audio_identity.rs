@@ -23,22 +23,66 @@ pub fn icon_data(name: &str) -> Option<String> {
 #[cfg(windows)]
 pub mod windows {
     use super::*;
-    use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::Path, ptr, slice};
+    use std::{
+        collections::{BTreeMap, HashMap, HashSet},
+        ffi::c_void,
+        os::windows::ffi::OsStrExt,
+        path::Path,
+        ptr, slice,
+        sync::Mutex,
+    };
     use windows_sys::Win32::{
-        Foundation::CloseHandle,
+        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, GetLastError, INVALID_HANDLE_VALUE},
         Graphics::Gdi::{
             BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection,
             DIB_RGB_COLORS, DeleteDC, DeleteObject, SelectObject,
         },
         Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW},
-        System::Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+        System::{
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            },
+            Threading::{
+                OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+            },
         },
         UI::{
             Shell::ExtractIconExW,
             WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx},
         },
     };
+
+    pub fn processes() -> std::io::Result<BTreeMap<u32, (u32, String)>> {
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot == INVALID_HANDLE_VALUE {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                ..Default::default()
+            };
+            let mut result = BTreeMap::new();
+            let mut ok = Process32FirstW(snapshot, &mut entry);
+            while ok != 0 {
+                let length = entry
+                    .szExeFile
+                    .iter()
+                    .position(|v| *v == 0)
+                    .unwrap_or(entry.szExeFile.len());
+                let name = String::from_utf16_lossy(&entry.szExeFile[..length]);
+                result.insert(entry.th32ProcessID, (entry.th32ParentProcessID, name));
+                ok = Process32NextW(snapshot, &mut entry);
+            }
+            let status = GetLastError();
+            CloseHandle(snapshot);
+            if status != ERROR_NO_MORE_FILES {
+                return Err(std::io::Error::from_raw_os_error(status as i32));
+            }
+            Ok(result)
+        }
+    }
 
     pub fn process_path(pid: u32) -> Option<PathBuf> {
         unsafe {
@@ -119,17 +163,65 @@ pub mod windows {
     }
 
     pub fn cache_icon(name: &str, executable: &Path) -> anyhow::Result<()> {
+        static WRITE_LOCK: Mutex<()> = Mutex::new(());
         let path = icon_path(name)?;
         if path.is_file() {
             return Ok(());
         }
         if let Some(bytes) = icon_png(executable) {
+            let _write = WRITE_LOCK.lock().unwrap();
+            if path.is_file() {
+                return Ok(());
+            }
             std::fs::create_dir_all(path.parent().unwrap())?;
             let temp = path.with_extension("tmp");
             std::fs::write(&temp, bytes)?;
             std::fs::rename(temp, path)?;
         }
         Ok(())
+    }
+
+    pub fn resolve_process_icons<'a>(
+        sources: impl IntoIterator<Item = &'a str>,
+    ) -> HashMap<String, String> {
+        let mut missing: HashMap<String, Vec<&str>> = HashMap::new();
+        for source in sources {
+            missing
+                .entry(source.to_lowercase())
+                .or_default()
+                .push(source);
+        }
+        let mut icons = HashMap::new();
+        if missing.is_empty() {
+            return icons;
+        }
+        let mut seen = HashSet::new();
+        for (pid, (_, executable)) in processes().unwrap_or_default() {
+            if missing.is_empty() {
+                break;
+            }
+            let Some(path) = process_path(pid).filter(|path| seen.insert(path.clone())) else {
+                continue;
+            };
+            let stem = Path::new(&executable)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
+            let name = app_name(&executable, Some(&path)).to_lowercase();
+            for key in [stem, name] {
+                if let Some(sources) = missing.get(&key) {
+                    let _ = cache_icon(sources[0], &path);
+                    if let Some(icon) = icon_data(sources[0]) {
+                        for source in sources {
+                            icons.insert((*source).to_owned(), icon.clone());
+                        }
+                        missing.remove(&key);
+                    }
+                }
+            }
+        }
+        icons
     }
 
     fn icon_png(path: &Path) -> Option<Vec<u8>> {

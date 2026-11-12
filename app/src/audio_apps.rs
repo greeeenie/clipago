@@ -64,7 +64,7 @@ impl ApplicationAudio {
         let mut entries = self.entries.lock().unwrap();
         #[cfg(windows)]
         {
-            let Ok(tree) = native::processes() else {
+            let Ok(tree) = crate::audio_identity::windows::processes() else {
                 return Vec::new();
             };
             let blocked = native::steam_audio_roots(&tree);
@@ -104,16 +104,12 @@ impl Drop for ApplicationAudio {
 #[cfg(windows)]
 mod native {
     use super::*;
-    use crate::audio_identity::windows::{app_name, process_path};
+    use crate::audio_identity::windows::{app_name, process_path, processes};
     use anyhow::Result;
     use std::collections::BTreeSet;
     use windows::{
         Win32::{Media::Audio::*, System::Com::*},
         core::{Interface, implement},
-    };
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, GetLastError, INVALID_HANDLE_VALUE},
-        System::Diagnostics::ToolHelp::*,
     };
 
     #[implement(IAudioSessionNotification)]
@@ -129,37 +125,6 @@ mod native {
             Ok(())
         }
     }
-    pub(super) fn processes() -> std::io::Result<BTreeMap<u32, (u32, String)>> {
-        unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if snapshot == INVALID_HANDLE_VALUE {
-                return Err(std::io::Error::last_os_error());
-            }
-            let mut entry = PROCESSENTRY32W {
-                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-                ..Default::default()
-            };
-            let mut result = BTreeMap::new();
-            let mut ok = Process32FirstW(snapshot, &mut entry);
-            while ok != 0 {
-                let length = entry
-                    .szExeFile
-                    .iter()
-                    .position(|v| *v == 0)
-                    .unwrap_or(entry.szExeFile.len());
-                let name = String::from_utf16_lossy(&entry.szExeFile[..length]);
-                result.insert(entry.th32ProcessID, (entry.th32ParentProcessID, name));
-                ok = Process32NextW(snapshot, &mut entry);
-            }
-            let status = GetLastError();
-            CloseHandle(snapshot);
-            if status != ERROR_NO_MORE_FILES {
-                return Err(std::io::Error::from_raw_os_error(status as i32));
-            }
-            Ok(result)
-        }
-    }
-
     pub(super) fn steam_audio_roots(processes: &BTreeMap<u32, (u32, String)>) -> BTreeSet<u32> {
         let mut blocked = BTreeSet::new();
         for (&pid, (_, name)) in processes {

@@ -2,8 +2,8 @@ import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {AlertDialog,Tabs,Tooltip} from 'radix-ui';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
-import {ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
-import {api,clipSourceLabel,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type GameFilter,type MovieProject} from './api';
+import {AppWindow,ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
+import {api,clipSourceLabel,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type SourceFilter,type MovieProject} from './api';
 import {IconButton,SaveAction,type SelectOption} from './components';
 import {Editor} from './Editor';
 import type {Selection} from './Timeline';
@@ -28,7 +28,7 @@ export function App(){
  const [clipName,setClipName]=useState('');
  const [nameDraft,setNameDraft]=useState<string|null>(null);
  const [requestedSource,setSourceFilter]=useState('all');
- const [gameFilters,setGameFilters]=useState<Record<string,GameFilter>>();
+ const [sourceFilters,setSourceFilters]=useState<Record<string,SourceFilter>>();
  const [deleteTarget,setDeleteTarget]=useState<Clip>();
  const [deleting,setDeleting]=useState(false);
  const drafts=useRef(new Map<string,{selection:Selection;config:ExportConfig;name:string}>());const current=useRef({selected,selection,config,clipName});current.current={selected,selection,config,clipName};
@@ -61,12 +61,13 @@ export function App(){
   return()=>{live=false;off.forEach(fn=>fn());};
  },[add,remove,select,update]);
  const recordedSources=useMemo(()=>[...new Set(clips.filter(c=>!c.is_movie&&c.source?.trim()).map(c=>JSON.stringify([c.source,!!c.game])))].sort().join('\n'),[clips]);
+ const newestClip=clips[0]?.path;
  useEffect(()=>{
   if(!recordedSources)return;
   let live=true;
-  void api.gameFilters().then(games=>{if(live)setGameFilters(games??{});}).catch(()=>{if(live)setGameFilters({});});
+  void api.sourceFilters().then(sources=>{if(live)setSourceFilters(sources??{});}).catch(()=>{if(live)setSourceFilters({});});
   return()=>{live=false;};
- },[recordedSources]);
+ },[recordedSources,newestClip]);
  const pending=state?.quick;
  useEffect(()=>{
   if(!quick||!pending)return;
@@ -118,21 +119,22 @@ export function App(){
  const sources=useMemo(()=>{
   const options=new Map<string,SelectOption>();
   const keys=new Map<string,string>();
-  if(gameFilters){
+  if(sourceFilters){
    for(const item of library){
-    const game=item.source?gameFilters[item.source]:undefined;
-    const name=game?.name??clipSourceLabel(item.source);
+    const source=item.source?sourceFilters[item.source]:undefined;
+    const game=source?.game;
+    const name=game?source.name:clipSourceLabel(item.source);
     const value=name?`${game?'game':'app'}:${name.toLowerCase()}`:'unknown';
     keys.set(item.key,value);
-    if(!options.has(value)||game?.icon)options.set(value,{
+    if(!options.has(value)||source?.icon)options.set(value,{
      value,label:name??'Без источника',group:game?'Игры':'Другое',
-     icon:game?(game.icon?<img src={game.icon} alt=""/>:<Gamepad2 aria-hidden="true"/>):undefined,
+     icon:source?.icon?<img src={source.icon} alt=""/>:game?<Gamepad2 aria-hidden="true"/>:name?<AppWindow aria-hidden="true"/>:undefined,
     });
    }
   }
   const sorted=[...options.values()].sort((a,b)=>a.label.localeCompare(b.label,'ru'));
   return {keys,options:[{value:'all',label:'Все клипы'},...sorted.filter(option=>option.group==='Игры'),...sorted.filter(option=>option.group==='Другое')]};
- },[library,gameFilters]);
+ },[library,sourceFilters]);
  const sourceOptions=sources.options;
  const sourceFilter=sourceOptions.some(option=>option.value===requestedSource)?requestedSource:'all';
  const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>sources.keys.get(item.key)===sourceFilter),[library,sources.keys,sourceFilter]);

@@ -1,6 +1,6 @@
 use crate::audio_identity::{
     icon_data,
-    windows::{app_name, cache_icon},
+    windows::{app_name, cache_icon, resolve_process_icons},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{
@@ -22,9 +22,10 @@ struct Game {
 }
 
 #[derive(serde::Serialize)]
-pub struct GameFilter {
+pub struct SourceFilter {
     name: String,
     icon: Option<String>,
+    game: bool,
 }
 
 fn read(path: &Path, limit: u64) -> Option<Vec<u8>> {
@@ -220,20 +221,18 @@ pub fn identify(executable: &Path) -> (String, bool) {
             .skip(1)
             .take(5)
             .any(|directory| directory.join("MicrosoftGame.config").is_file());
-    if is_game {
-        let _ = cache_icon(&name, executable);
-    }
+    let _ = cache_icon(&name, executable);
     (name, is_game)
 }
 
-pub fn filters(sources: HashMap<String, bool>) -> HashMap<String, GameFilter> {
+pub fn filters(sources: HashMap<String, bool>) -> HashMap<String, SourceFilter> {
     if sources.is_empty() {
         return HashMap::new();
     }
     let installed = installed_games();
-    sources
+    let mut filters: HashMap<_, _> = sources
         .into_iter()
-        .filter_map(|(source, recorded_game)| {
+        .map(|(source, recorded_game)| {
             let key = normalized_name(&source);
             let mut matches = installed
                 .iter()
@@ -243,7 +242,7 @@ pub fn filters(sources: HashMap<String, bool>) -> HashMap<String, GameFilter> {
                 .filter(|first| matches.all(|other| first.name == other.name));
             let name = game
                 .map(|game| game.name.clone())
-                .or_else(|| recorded_game.then(|| source.clone()))?;
+                .unwrap_or_else(|| source.clone());
             let icon = icon_data(&name).or_else(|| {
                 let game = game?;
                 if let Some(bytes) = game
@@ -262,7 +261,26 @@ pub fn filters(sources: HashMap<String, bool>) -> HashMap<String, GameFilter> {
                 }
                 None
             });
-            Some((source, GameFilter { name, icon }))
+            (
+                source,
+                SourceFilter {
+                    name,
+                    icon,
+                    game: recorded_game || game.is_some(),
+                },
+            )
         })
-        .collect()
+        .collect();
+    let icons = resolve_process_icons(
+        filters
+            .iter()
+            .filter(|(_, filter)| !filter.game && filter.icon.is_none())
+            .map(|(name, _)| name.as_str()),
+    );
+    for (name, icon) in icons {
+        if let Some(filter) = filters.get_mut(&name) {
+            filter.icon = Some(icon);
+        }
+    }
+    filters
 }

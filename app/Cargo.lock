@@ -3030,7 +3030,7 @@ dependencies = [
 
 [[package]]
 name = "rewind"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

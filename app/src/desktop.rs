@@ -1300,9 +1300,9 @@ fn audio_track_icons(
 }
 
 #[tauri::command]
-async fn game_filters(
+async fn source_filters(
     engine: tauri::State<'_, Engine>,
-) -> Result<HashMap<String, rewind::games::GameFilter>> {
+) -> Result<HashMap<String, rewind::games::SourceFilter>> {
     let mut sources = HashMap::new();
     for clip in engine
         .0
@@ -1581,7 +1581,7 @@ pub fn run() {
             thumbnail,
             prepare_preview,
             audio_track_icons,
-            game_filters,
+            source_filters,
             rename_clip,
             prepare_audio_preview,
             export_video,
