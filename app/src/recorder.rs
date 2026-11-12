@@ -668,6 +668,9 @@ fn render_snapshot(
     if let Some(source) = &snapshot.source {
         command.args(["-metadata", &format!("comment=Rewind source: {source}")]);
     }
+    if snapshot.game {
+        command.args(["-metadata", "description=Clipago game"]);
+    }
     let mut child = command
         .arg(partial)
         .stdin(Stdio::piped())
@@ -828,7 +831,8 @@ fn worker(
                     match snapshot {
                         Err(error) => emit(Event::Error(error.to_string())),
                         Ok(mut snapshot) => {
-                            snapshot.source = media::foreground_app_name();
+                            #[cfg(windows)]
+                            let executable = media::foreground_executable();
                             let duration =
                                 (snapshot.duration * snapshot.fps as f64).round().max(1.0)
                                     / snapshot.fps as f64;
@@ -860,6 +864,12 @@ fn worker(
                             let cancel = shutdown.clone();
                             let output = media::unique_path(&settings.output_dir, "Replay", "mp4");
                             save_worker = Some(thread::spawn(move || {
+                                #[cfg(windows)]
+                                if let Some(executable) = executable {
+                                    let (name, game) = crate::games::identify(&executable);
+                                    snapshot.source = Some(name);
+                                    snapshot.game = game;
+                                }
                                 let result = save_snapshot_with_options(
                                     &ffmpeg, snapshot, &output, cancel, options,
                                 )

@@ -94,6 +94,18 @@ impl Catalog {
         }
         self.save()
     }
+    pub fn rename(&mut self, path: &Path, title: Option<String>) -> Result<()> {
+        let entry = self
+            .entries
+            .get_mut(path)
+            .ok_or_else(|| anyhow::anyhow!("Клип не найден в библиотеке"))?;
+        let previous = std::mem::replace(&mut entry.title, title);
+        if let Err(error) = self.save() {
+            self.entries.get_mut(path).unwrap().title = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {

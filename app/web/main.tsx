@@ -2,14 +2,14 @@ import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {AlertDialog,Tabs,Tooltip} from 'radix-ui';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
-import {ArrowLeft,Copy,FolderOpen,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
-import {api,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type MovieProject} from './api';
+import {ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
+import {api,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type GameFilter,type MovieProject} from './api';
 import {IconButton,SaveAction} from './components';
 import {Editor} from './Editor';
 import type {Selection} from './Timeline';
 import {Inspector} from './Inspector';
 import {SettingsDialog} from './Settings';
-import {ClipLibraryGrid,libraryItems,librarySourceKey} from './ClipLibraryGrid';
+import {ClipLibraryGrid,libraryItems} from './ClipLibraryGrid';
 import {MovieWorkspace} from './MovieWorkspace';
 import {loadProject} from './projectState';
 import {useAppUpdates} from './useAppUpdates';
@@ -28,6 +28,7 @@ export function App(){
  const [clipName,setClipName]=useState('');
  const [nameDraft,setNameDraft]=useState<string|null>(null);
  const [requestedSource,setSourceFilter]=useState('all');
+ const [gameFilters,setGameFilters]=useState<Record<string,GameFilter>>({});
  const [deleteTarget,setDeleteTarget]=useState<Clip>();
  const [deleting,setDeleting]=useState(false);
  const drafts=useRef(new Map<string,{selection:Selection;config:ExportConfig;name:string}>());const current=useRef({selected,selection,config,clipName});current.current={selected,selection,config,clipName};
@@ -59,6 +60,13 @@ export function App(){
   if(!quick)void window.onDragDropEvent(event=>{if(event.payload.type==='drop')void api.importPaths(event.payload.paths).then(items=>{items.forEach(add);if(items[0])select(items[0]);}).catch(e=>setError(String(e)));}).then(fn=>live?off.push(fn):fn());
   return()=>{live=false;off.forEach(fn=>fn());};
  },[add,remove,select,update]);
+ const recordedSources=useMemo(()=>[...new Set(clips.filter(c=>!c.is_movie&&c.source?.trim()).map(c=>JSON.stringify([c.source,!!c.game])))].sort().join('\n'),[clips]);
+ useEffect(()=>{
+  if(!recordedSources)return;
+  let live=true;
+  void api.gameFilters().then(games=>{if(live&&games)setGameFilters(games);}).catch(()=>{});
+  return()=>{live=false;};
+ },[recordedSources]);
  const pending=state?.quick;
  useEffect(()=>{
   if(!quick||!pending)return;
@@ -88,6 +96,12 @@ export function App(){
   finally{saving.current=false;setBusy(false);}
  },[selected,config,busy,hardware,selection,clipName,add,select]);
  const openClip=(clip:Clip)=>{select(clip,hardware);viewed(clip);};
+ const renameClip=(clip:Clip,value:string)=>{
+  setNameDraft(null);
+  const title=value.trim();
+  if(title===(clip.title??''))return;
+  void api.renameClip(clip.path,title).then(update).catch(e=>setError(String(e)));
+ };
  const copyClip=(clip:Clip)=>void api.copyClip(clip.path).then(()=>{setError('');setMessage('Клип скопирован');}).catch(e=>setError(String(e)));
  const deleteClip=async()=>{
   if(!deleteTarget||deleting)return;
@@ -101,15 +115,23 @@ export function App(){
  };
  const rootPath=selected?.original_path??selected?.path;
  const library=useMemo(()=>libraryItems(clips),[clips]);
- const sourceOptions=useMemo(()=>{
-  const sources=new Map<string,string>();
-  for(const item of library)if(item.source)sources.set(librarySourceKey(item),item.source);
-  const options=[{value:'all',label:'Все клипы'},...[...sources].map(([value,label])=>({value,label})).sort((a,b)=>a.label.localeCompare(b.label,'ru'))];
-  if(sources.size&&library.some(item=>!item.source))options.push({value:'unknown',label:'Без источника'});
-  return options;
- },[library]);
+ const games=useMemo(()=>{
+  const titles=new Map<string,GameFilter>();
+  const keys=new Map<string,string>();
+  for(const item of library){
+   const game=item.source?gameFilters[item.source]:undefined;
+   if(!game?.name)continue;
+   const key=`game:${game.name.toLowerCase()}`;
+   keys.set(item.key,key);
+   if(!titles.get(key)?.icon)titles.set(key,game);
+  }
+  return {titles,keys};
+ },[library,gameFilters]);
+ const sourceOptions=useMemo(()=>[{value:'all',label:'Все клипы'},...[...games.titles].map(([value,{name,icon}])=>({
+  value,label:name,icon:icon?<img src={icon} alt=""/>:<Gamepad2 aria-hidden="true"/>,
+ })).sort((a,b)=>a.label.localeCompare(b.label,'ru'))],[games.titles]);
  const sourceFilter=sourceOptions.some(option=>option.value===requestedSource)?requestedSource:'all';
- const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>librarySourceKey(item)===sourceFilter),[library,sourceFilter]);
+ const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>games.keys.get(item.key)===sourceFilter),[library,games.keys,sourceFilter]);
  const items=useMemo(()=>quick?pending?.map(clip=>({key:clip.path,clip,versions:[clip]}))??[]:visibleItems,[pending,visibleItems]);
  const index=rootPath?items.findIndex(item=>item.key===rootPath):-1;
  const versions=(items[index]??(rootPath?library.find(item=>item.key===rootPath):undefined))?.versions??[];
@@ -160,7 +182,16 @@ export function App(){
   <main className="main-editor">
    <header className="editor-header">
     <IconButton label="Назад к клипам" disabled={busy} onClick={()=>setView('library')}><ArrowLeft size={17}/></IconButton>
-    <span className="current-name" title={selectedTitle}>{selectedTitle}</span>
+    {nameDraft===null?<>
+     <span className="current-name" title={selectedTitle}>{selectedTitle}</span>
+     <IconButton label="Изменить название клипа" disabled={busy} onClick={()=>setNameDraft(selected.title??'')}><Pencil size={15}/></IconButton>
+    </>:<input className="editor-name-input" autoFocus aria-label="Название клипа" placeholder={selectedTitle} maxLength={80} value={nameDraft}
+     onFocus={e=>e.currentTarget.select()} onChange={e=>setNameDraft(e.target.value)} onBlur={e=>renameClip(selected,e.currentTarget.value)}
+     onKeyDown={e=>{
+      if(e.nativeEvent.isComposing)return;
+      if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}
+      if(e.key==='Escape'){e.preventDefault();setNameDraft(null);}
+     }}/>}
     <IconButton label="Показать в папке" onClick={()=>void api.revealClip(selected.path).catch(e=>setError(String(e)))}><FolderOpen size={16}/></IconButton>
     <span className="spacer"/>
     {!!edited.length&&<div className="version-switch" aria-label="Версия клипа">

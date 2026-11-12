@@ -129,9 +129,21 @@ impl Engine {
         let catalog = self.0.catalog.lock().unwrap();
         let mut clips = self.0.clips.lock().unwrap();
         for clip in clips.values_mut() {
-            let before = (clip.viewed, clip.original_path.clone(), clip.is_movie);
+            let before = (
+                clip.viewed,
+                clip.original_path.clone(),
+                clip.is_movie,
+                clip.title.clone(),
+            );
             catalog.decorate(clip);
-            if before != (clip.viewed, clip.original_path.clone(), clip.is_movie) {
+            if before
+                != (
+                    clip.viewed,
+                    clip.original_path.clone(),
+                    clip.is_movie,
+                    clip.title.clone(),
+                )
+            {
                 let _ = app.emit("clip-updated", &*clip);
             }
         }
@@ -1277,6 +1289,54 @@ fn audio_track_icons(
 }
 
 #[tauri::command]
+async fn game_filters(
+    engine: tauri::State<'_, Engine>,
+) -> Result<HashMap<String, rewind::games::GameFilter>> {
+    let mut sources = HashMap::new();
+    for clip in engine
+        .0
+        .clips
+        .lock()
+        .unwrap()
+        .values()
+        .filter(|clip| !clip.is_movie)
+    {
+        if let Some(source) = clip
+            .source
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            *sources.entry(source.to_owned()).or_insert(false) |= clip.game;
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || rewind::games::filters(sources))
+        .await
+        .map_err(error)
+}
+
+#[tauri::command]
+fn rename_clip(
+    app: tauri::AppHandle,
+    engine: tauri::State<Engine>,
+    path: PathBuf,
+    title: String,
+) -> Result<Clip> {
+    engine.clip(&path)?;
+    let title = title.trim().chars().take(80).collect::<String>();
+    let title = (!title.is_empty()).then_some(title);
+    engine
+        .0
+        .catalog
+        .lock()
+        .unwrap()
+        .rename(&path, title)
+        .map_err(error)?;
+    engine.refresh_library(&app);
+    engine.clip(&path)
+}
+
+#[tauri::command]
 async fn prepare_audio_preview(
     app: tauri::AppHandle,
     engine: tauri::State<'_, Engine>,
@@ -1510,6 +1570,8 @@ pub fn run() {
             thumbnail,
             prepare_preview,
             audio_track_icons,
+            game_filters,
+            rename_clip,
             prepare_audio_preview,
             export_video,
             cancel_export,

@@ -1,7 +1,7 @@
-import {useLayoutEffect,useRef,useState,type RefObject} from 'react';
+import {useLayoutEffect,useRef,useState,type ReactNode,type RefObject} from 'react';
 import {ContextMenu,Dialog} from 'radix-ui';
 import {Check,Copy,Film,FolderOpen,Layers2,Play,Plus,Trash2,Video,X,Zap} from 'lucide-react';
-import {api,clipSourceLabel,clipTitle,time,type Clip,type Snapshot} from './api';
+import {api,clipTitle,time,type Clip,type Snapshot} from './api';
 import {clipGroups} from './projectState';
 import {Thumbnail,IconButton,Select} from './components';
 
@@ -10,12 +10,11 @@ export function libraryItems(clips:Clip[]):LibraryItem[]{
  return [
   ...clipGroups(clips).map(group=>{
    const versions=[...(group.raw?[group.raw]:[]),...group.edited];
-   return {key:group.path,clip:versions[0],versions,source:versions.map(clipSourceLabel).find(Boolean)};
+   return {key:group.path,clip:versions[0],versions,source:versions.find(clip=>clip.source?.trim())?.source?.trim()};
   }),
   ...clips.filter(clip=>clip.is_movie).map(clip=>({key:clip.path,clip,versions:[clip]})),
  ];
 }
-export function librarySourceKey(item:LibraryItem){return item.source?`source:${item.source.toLowerCase()}`:'unknown';}
 
 function Cards({items,onOpen,onCopy,onDelete,picking=false,chosen=[],onToggle}:{items:LibraryItem[];onOpen?:(c:Clip)=>void;onCopy?:(c:Clip)=>void;onDelete?:(c:Clip)=>void;picking?:boolean;chosen?:string[];onToggle?:(path:string)=>void}){
  return <div className="library-grid">{items.map(({key,clip,versions})=>{
@@ -49,14 +48,14 @@ function Cards({items,onOpen,onCopy,onDelete,picking=false,chosen=[],onToggle}:{
   </ContextMenu.Root>;
  })}</div>;
 }
-export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter,onOpen,onCopy,onDelete,onImport,onCapture,onError,state,scrollPosition}:{items:LibraryItem[];sourceFilter:string;sourceOptions:{value:string;label:string}[];onSourceFilter:(value:string)=>void;onOpen:(c:Clip)=>void;onCopy:(c:Clip)=>void;onDelete:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
+export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter,onOpen,onCopy,onDelete,onImport,onCapture,onError,state,scrollPosition}:{items:LibraryItem[];sourceFilter:string;sourceOptions:{value:string;label:string;icon?:ReactNode}[];onSourceFilter:(value:string)=>void;onOpen:(c:Clip)=>void;onCopy:(c:Clip)=>void;onDelete:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
  const host=useRef<HTMLDivElement>(null);useLayoutEffect(()=>{if(host.current)host.current.scrollTop=scrollPosition.current;},[scrollPosition,sourceFilter]);
  const count=items.length;const status=state?.replay_status??(state?.transitioning?'warming':state?.recording?'ready':'stopped');const captureLabel=status==='saving'?'Сохранение…':status==='warming'?'Подготовка…':status==='ready'?'Сохранить момент':'Включить запись';
  return <main className="library-page">
   <header className="page-header">
    <div className="library-title">
     <h1>Клипы</h1>{count>0&&<span className="item-count" title={`Клипов: ${count}`}>{count}</span>}
-    {sourceOptions.length>1&&<Select value={sourceFilter} options={sourceOptions} label="Фильтр по игре или приложению" onChange={onSourceFilter}/>}
+    {sourceOptions.length>1&&<Select value={sourceFilter} options={sourceOptions} label="Фильтр по играм" onChange={onSourceFilter}/>}
    </div>
    <div className="library-actions">
     <button className="secondary-button" onClick={()=>void api.folder().catch(e=>onError(String(e)))}><FolderOpen size={16}/>Открыть папку</button>

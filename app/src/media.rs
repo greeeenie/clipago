@@ -123,6 +123,7 @@ pub struct Clip {
     pub audio_tracks: Vec<AudioTrack>,
     pub audio_mix_index: Option<u32>,
     pub source: Option<String>,
+    pub game: bool,
     pub fps: f64,
     pub aspect_ratio: f32,
     pub original_path: Option<PathBuf>,
@@ -294,6 +295,11 @@ pub fn probe(ffprobe: &str, path: &Path) -> Result<Clip> {
             .get("comment")
             .and_then(|tag| tag.strip_prefix("Rewind source: "))
             .map(str::to_owned),
+        game: data
+            .format
+            .tags
+            .get("description")
+            .is_some_and(|value| value == "Clipago game"),
         fps: video
             .avg_frame_rate
             .as_deref()
@@ -318,15 +324,11 @@ pub fn probe(ffprobe: &str, path: &Path) -> Result<Clip> {
 }
 
 /// Read just the foreground executable's name, not a potentially private window title.
-pub fn foreground_app_name() -> Option<String> {
+pub fn foreground_executable() -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::{
-            Foundation::CloseHandle,
-            System::Threading::{
-                OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-            },
-            UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId,
         };
         unsafe {
             let window = GetForegroundWindow();
@@ -335,43 +337,13 @@ pub fn foreground_app_name() -> Option<String> {
             }
             let mut pid = 0;
             GetWindowThreadProcessId(window, &mut pid);
-            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if process.is_null() {
-                return None;
-            }
-            let mut path = [0_u16; 32768];
-            let mut len = path.len() as u32;
-            let success = QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut len);
-            CloseHandle(process);
-            if success == 0 {
-                return None;
-            }
-            let path = String::from_utf16_lossy(&path[..len as usize]);
-            let stem = Path::new(&path).file_stem()?.to_string_lossy();
-            if stem.eq_ignore_ascii_case("rewind") {
-                return None;
-            }
-            Some(source_label(&stem))
+            (pid != std::process::id())
+                .then(|| crate::audio_identity::windows::process_path(pid))
+                .flatten()
         }
     }
     #[cfg(not(windows))]
     None
-}
-
-fn source_label(stem: &str) -> String {
-    match stem.to_ascii_lowercase().as_str() {
-        "valorant-win64-shipping" => "Valorant",
-        "cs2" => "Counter-Strike 2",
-        "cyberpunk2077" => "Cyberpunk 2077",
-        "helldivers2" => "Helldivers 2",
-        "dota2" => "Dota 2",
-        "fortniteclient-win64-shipping" => "Fortnite",
-        "r5apex" => "Apex Legends",
-        "explorer" => "Рабочий стол",
-        "discord" => "Discord",
-        _ => stem,
-    }
-    .into()
 }
 
 pub fn unique_path(dir: &Path, prefix: &str, extension: &str) -> PathBuf {
@@ -1015,12 +987,6 @@ mod tests {
         assert_eq!(fs::read(destination).unwrap(), b"new clip");
     }
 
-    #[test]
-    fn game_labels_use_real_executable_names() {
-        assert_eq!(source_label("VALORANT-Win64-Shipping"), "Valorant");
-        assert_eq!(source_label("cs2"), "Counter-Strike 2");
-        assert_eq!(source_label("SomeOtherGame"), "SomeOtherGame");
-    }
     #[test]
     fn display_ratio_respects_pixel_shape_and_rotation() {
         assert!((display_aspect(1920, 1080, None, 0.0) - 16.0 / 9.0).abs() < 0.001);
