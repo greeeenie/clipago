@@ -3,8 +3,8 @@ import {AlertDialog,Tabs,Tooltip} from 'radix-ui';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
 import {ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
-import {api,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type GameFilter,type MovieProject} from './api';
-import {IconButton,SaveAction} from './components';
+import {api,clipSourceLabel,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type GameFilter,type MovieProject} from './api';
+import {IconButton,SaveAction,type SelectOption} from './components';
 import {Editor} from './Editor';
 import type {Selection} from './Timeline';
 import {Inspector} from './Inspector';
@@ -28,7 +28,7 @@ export function App(){
  const [clipName,setClipName]=useState('');
  const [nameDraft,setNameDraft]=useState<string|null>(null);
  const [requestedSource,setSourceFilter]=useState('all');
- const [gameFilters,setGameFilters]=useState<Record<string,GameFilter>>({});
+ const [gameFilters,setGameFilters]=useState<Record<string,GameFilter>>();
  const [deleteTarget,setDeleteTarget]=useState<Clip>();
  const [deleting,setDeleting]=useState(false);
  const drafts=useRef(new Map<string,{selection:Selection;config:ExportConfig;name:string}>());const current=useRef({selected,selection,config,clipName});current.current={selected,selection,config,clipName};
@@ -64,7 +64,7 @@ export function App(){
  useEffect(()=>{
   if(!recordedSources)return;
   let live=true;
-  void api.gameFilters().then(games=>{if(live&&games)setGameFilters(games);}).catch(()=>{});
+  void api.gameFilters().then(games=>{if(live)setGameFilters(games??{});}).catch(()=>{if(live)setGameFilters({});});
   return()=>{live=false;};
  },[recordedSources]);
  const pending=state?.quick;
@@ -115,23 +115,27 @@ export function App(){
  };
  const rootPath=selected?.original_path??selected?.path;
  const library=useMemo(()=>libraryItems(clips),[clips]);
- const games=useMemo(()=>{
-  const titles=new Map<string,GameFilter>();
+ const sources=useMemo(()=>{
+  const options=new Map<string,SelectOption>();
   const keys=new Map<string,string>();
-  for(const item of library){
-   const game=item.source?gameFilters[item.source]:undefined;
-   if(!game?.name)continue;
-   const key=`game:${game.name.toLowerCase()}`;
-   keys.set(item.key,key);
-   if(!titles.get(key)?.icon)titles.set(key,game);
+  if(gameFilters){
+   for(const item of library){
+    const game=item.source?gameFilters[item.source]:undefined;
+    const name=game?.name??clipSourceLabel(item.source);
+    const value=name?`${game?'game':'app'}:${name.toLowerCase()}`:'unknown';
+    keys.set(item.key,value);
+    if(!options.has(value)||game?.icon)options.set(value,{
+     value,label:name??'Без источника',group:game?'Игры':'Другое',
+     icon:game?(game.icon?<img src={game.icon} alt=""/>:<Gamepad2 aria-hidden="true"/>):undefined,
+    });
+   }
   }
-  return {titles,keys};
+  const sorted=[...options.values()].sort((a,b)=>a.label.localeCompare(b.label,'ru'));
+  return {keys,options:[{value:'all',label:'Все клипы'},...sorted.filter(option=>option.group==='Игры'),...sorted.filter(option=>option.group==='Другое')]};
  },[library,gameFilters]);
- const sourceOptions=useMemo(()=>[{value:'all',label:'Все клипы'},...[...games.titles].map(([value,{name,icon}])=>({
-  value,label:name,icon:icon?<img src={icon} alt=""/>:<Gamepad2 aria-hidden="true"/>,
- })).sort((a,b)=>a.label.localeCompare(b.label,'ru'))],[games.titles]);
+ const sourceOptions=sources.options;
  const sourceFilter=sourceOptions.some(option=>option.value===requestedSource)?requestedSource:'all';
- const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>games.keys.get(item.key)===sourceFilter),[library,games.keys,sourceFilter]);
+ const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>sources.keys.get(item.key)===sourceFilter),[library,sources.keys,sourceFilter]);
  const items=useMemo(()=>quick?pending?.map(clip=>({key:clip.path,clip,versions:[clip]}))??[]:visibleItems,[pending,visibleItems]);
  const index=rootPath?items.findIndex(item=>item.key===rootPath):-1;
  const versions=(items[index]??(rootPath?library.find(item=>item.key===rootPath):undefined))?.versions??[];

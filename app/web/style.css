@@ -129,6 +129,8 @@
 .select-item,.dropdown [role=menuitem]{min-height:32px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 8px;border-radius:4px;font-size:12px;cursor:pointer;outline:none}
 .select-item[data-highlighted],.dropdown [data-highlighted]{background:#34343a}
 .select-item[data-state=checked]{color:#fff}
+.select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
+.select-group-label{padding:3px 8px;color:var(--muted);font-size:11px}
 .dropdown{min-width:190px}
 .dropdown [role=menuitem]{justify-content:flex-start}
 .clip-menu{min-width:156px}

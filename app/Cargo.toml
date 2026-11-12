@@ -1,6 +1,6 @@
 [package]
 name = "rewind"
-version = "0.3.22"
+version = "0.3.23"
 edition = "2024"
 description = "A small Windows replay buffer and video clip editor"
 license = "MIT"
@@ -15,6 +15,7 @@ chrono = "0.4"
 directories = "6"
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-updater = "2"
+tokio = { version = "1", features = ["sync"] }
 base64 = "0.22"
 minisign-verify = "0.3"
 sha2 = "0.10"

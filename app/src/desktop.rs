@@ -100,7 +100,8 @@ struct Inner {
     catalog: Mutex<rewind::library::Catalog>,
     actions: mpsc::Sender<Action>,
     wake: mpsc::Sender<()>,
-    thumbnail_gate: Mutex<()>,
+    thumbnail_slots: Arc<tokio::sync::Semaphore>,
+    preview_gate: Mutex<()>,
     cache: WorkDir,
     export_busy: AtomicBool,
     quick_exports: Mutex<HashMap<PathBuf, QuickExport>>,
@@ -445,7 +446,10 @@ fn create_engine(app: &tauri::AppHandle) -> anyhow::Result<Engine> {
         )?),
         actions,
         wake: wake_tx.clone(),
-        thumbnail_gate: Mutex::new(()),
+        thumbnail_slots: Arc::new(tokio::sync::Semaphore::new(
+            thread::available_parallelism().map_or(1, |threads| (threads.get() / 4).clamp(1, 3)),
+        )),
+        preview_gate: Mutex::new(()),
         cache: WorkDir::new(&app.path().app_cache_dir()?, "session")?,
         export_busy: AtomicBool::new(false),
         quick_exports: Mutex::new(HashMap::new()),
@@ -1204,8 +1208,15 @@ async fn thumbnail(
 ) -> Result<String> {
     let engine = engine.inner().clone();
     let clip = engine.clip(&path)?;
+    let slot = engine
+        .0
+        .thumbnail_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(error)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard=engine.0.thumbnail_gate.lock().unwrap();
+        let _slot=slot;
         let ffmpeg=engine.0.state.lock().unwrap().settings.ffmpeg.clone();
         let output=media::command(media::tool(&ffmpeg)).args(["-v","error","-nostdin","-filter_threads","1","-threads","1","-ss",&format!("{:.3}",seconds.clamp(0.0,(clip.duration-0.05).max(0.0)))])
             .arg("-i").arg(path).args(["-frames:v","1","-vf","scale=240:135:force_original_aspect_ratio=decrease,pad=240:135:(ow-iw)/2:(oh-ih)/2,setsar=1","-threads","1","-c:v","png","-f","image2pipe","pipe:1"])
@@ -1224,7 +1235,7 @@ async fn prepare_preview(
     let engine = engine.inner().clone();
     engine.clip(&path)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = engine.0.thumbnail_gate.lock().unwrap();
+        let _guard = engine.0.preview_gate.lock().unwrap();
         if engine.0.shutting_down.load(Ordering::Relaxed) {
             return Err("Приложение закрывается".into());
         }
@@ -1345,7 +1356,7 @@ async fn prepare_audio_preview(
     let engine = engine.inner().clone();
     let clip = engine.clip(&path)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = engine.0.thumbnail_gate.lock().unwrap();
+        let _guard = engine.0.preview_gate.lock().unwrap();
         if engine.0.shutting_down.load(Ordering::Relaxed) {
             return Err("Приложение закрывается".into());
         }

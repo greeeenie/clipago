@@ -3030,7 +3030,7 @@ dependencies = [
 
 [[package]]
 name = "rewind"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3047,6 +3047,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-updater",
+ "tokio",
  "windows",
  "windows-core",
  "windows-sys 0.61.2",

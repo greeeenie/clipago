@@ -41,8 +41,8 @@ export const api={
 export const fileUrl=convertFileSrc;
 export const filename=(path:string)=>path.split(/[\\/]/).pop()||path;
 const replayDate=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'});
-export function clipSourceLabel(clip:Clip){
-  const source=clip.source?.trim();
+export function clipSourceLabel(value:string|null|undefined){
+  const source=value?.trim();
   return source&&source===source.toLowerCase()?source.replace(/^\p{L}/u,letter=>letter.toUpperCase()):source;
 }
 export function clipTitle(clip:Clip){
@@ -56,7 +56,7 @@ export function clipTitle(clip:Clip){
   // Capture names store local wall time. Format that date without shifting it to another day.
   const date=new Date(`${day}T${hours}:${minutes}:00Z`);
   if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==day)return stem;
-  return `${clipSourceLabel(clip)||'Клип'} — ${replayDate.format(date)}, ${hours}:${minutes}`;
+  return `${clipSourceLabel(clip.source)||'Клип'} — ${replayDate.format(date)}, ${hours}:${minutes}`;
 }
 export function time(value:number,precise=false){const ms=Math.max(0,Math.round(value*1000));const base=`${Math.floor(ms/60000).toString().padStart(2,'0')}:${Math.floor(ms/1000%60).toString().padStart(2,'0')}`;return precise?`${base}.${(ms%1000).toString().padStart(3,'0')}`:base;}
 export const snapBuffer=(n:number)=>Math.round(Math.max(30,Math.min(120,n))/5)*5;
