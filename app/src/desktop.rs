@@ -113,6 +113,13 @@ struct Inner {
 struct Engine(Arc<Inner>);
 type Result<T> = std::result::Result<T, String>;
 
+struct ExportGuard(Engine);
+impl Drop for ExportGuard {
+    fn drop(&mut self) {
+        self.0.0.export_busy.store(false, Ordering::SeqCst);
+    }
+}
+
 fn error(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -335,6 +342,26 @@ fn hide_quick(window: &tauri::WebviewWindow) {
     }
     #[cfg(not(windows))]
     let _ = window.hide();
+}
+
+fn finish_quick_clip(app: &tauri::AppHandle, engine: Engine, path: PathBuf) {
+    let app_handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let empty = {
+            let mut state = engine.0.state.lock().unwrap();
+            let count = state.quick.len();
+            state.quick.retain(|clip| clip.path != path);
+            engine.0.quick_exports.lock().unwrap().remove(&path);
+            if state.quick.len() == count {
+                return;
+            }
+            state.quick.is_empty()
+        };
+        if empty && let Some(window) = app_handle.get_webview_window("quick") {
+            hide_quick(&window);
+        }
+        publish_state(&engine, &app_handle);
+    });
 }
 
 // Called on the engine worker so window creation stays serialized and off the UI thread.
@@ -992,6 +1019,86 @@ fn open_folder(engine: tauri::State<Engine>) -> Result<()> {
         .map_err(error)?;
     Ok(())
 }
+
+fn copy_file_to_clipboard(path: &Path) -> Result<()> {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set().file_list(&[path]))
+        .map_err(|_| "Не удалось скопировать файл в буфер обмена".into())
+}
+
+#[tauri::command]
+async fn copy_clip(engine: tauri::State<'_, Engine>, path: PathBuf) -> Result<()> {
+    let clip = engine.clip(&path)?;
+    tauri::async_runtime::spawn_blocking(move || copy_file_to_clipboard(&clip.path))
+        .await
+        .map_err(error)?
+}
+
+fn recycle_file(path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::{System::Com::*, UI::Shell::*},
+        core::PCWSTR,
+    };
+    if !path.is_file() {
+        return Err("Файл клипа не найден".into());
+    }
+    let path_wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    struct Com;
+    impl Drop for Com {
+        fn drop(&mut self) {
+            unsafe { CoUninitialize() };
+        }
+    }
+    unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+            .ok()
+            .map_err(error)?;
+        let _com = Com;
+        let operation: IFileOperation =
+            CoCreateInstance(&FileOperation, None, CLSCTX_INPROC_SERVER).map_err(error)?;
+        operation
+            .SetOperationFlags(FOFX_RECYCLEONDELETE | FOF_ALLOWUNDO | FOF_NOERRORUI | FOF_SILENT)
+            .map_err(error)?;
+        let item: IShellItem =
+            SHCreateItemFromParsingName(PCWSTR(path_wide.as_ptr()), None).map_err(error)?;
+        operation.DeleteItem(&item, None).map_err(error)?;
+        operation.PerformOperations().map_err(error)?;
+        if operation
+            .GetAnyOperationsAborted()
+            .map_err(error)?
+            .as_bool()
+            || path.exists()
+        {
+            return Err("Не удалось переместить клип в корзину".into());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_clip(
+    app: tauri::AppHandle,
+    engine: tauri::State<'_, Engine>,
+    path: PathBuf,
+) -> Result<()> {
+    let clip = engine.clip(&path)?;
+    if engine.0.export_busy.swap(true, Ordering::SeqCst) {
+        return Err("Дождитесь завершения сохранения".into());
+    }
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = ExportGuard(engine.clone());
+        recycle_file(&clip.path)?;
+        engine.0.clips.lock().unwrap().remove(&clip.path);
+        let _ = app.emit("clip-removed", &clip.path);
+        finish_quick_clip(&app, engine, clip.path);
+        Ok(())
+    })
+    .await
+    .map_err(error)?
+}
+
 #[tauri::command]
 fn reveal_clip(engine: tauri::State<Engine>, path: PathBuf) -> Result<()> {
     use std::os::windows::process::CommandExt;
@@ -1209,13 +1316,7 @@ async fn export_video(
     let quick = window.label() == "quick";
     let copy = copy.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
-        struct Guard(Engine);
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                self.0.0.export_busy.store(false, Ordering::SeqCst);
-            }
-        }
-        let _guard = Guard(engine.clone());
+        let _guard = ExportGuard(engine.clone());
         let settings = engine.0.state.lock().unwrap().settings.clone();
         let source_path = clip.path.clone();
         let title = title
@@ -1301,33 +1402,14 @@ async fn export_video(
             saved
         };
         if copy {
-            #[cfg(windows)]
-            let copied = arboard::Clipboard::new()
-                .and_then(|mut clipboard| clipboard.set().file_list(&[&saved.path]))
-                .is_ok();
-            #[cfg(not(windows))]
-            let copied = false;
-            if !copied {
-                return Err("Клип сохранён. Буфер обмена недоступен.".into());
-            }
+            copy_file_to_clipboard(&saved.path)
+                .map_err(|_| "Клип сохранён. Буфер обмена недоступен.".to_owned())?;
             notify(&app, "Клип скопирован");
             return Ok(Some(saved));
         }
         notify(&app, "Копия сохранена");
         if quick {
-            let app_handle = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                let empty = {
-                    let mut state = engine.0.state.lock().unwrap();
-                    state.quick.retain(|clip| clip.path != source_path);
-                    engine.0.quick_exports.lock().unwrap().remove(&source_path);
-                    state.quick.is_empty()
-                };
-                if empty {
-                    hide_quick(&window);
-                }
-                publish_state(&engine, &app_handle);
-            });
+            finish_quick_clip(&app, engine, source_path);
         }
         Ok(Some(saved))
     })
@@ -1378,6 +1460,8 @@ pub fn run() {
             import_video,
             choose_folder,
             open_folder,
+            copy_clip,
+            delete_clip,
             reveal_clip,
             open_help_page,
             thumbnail,
