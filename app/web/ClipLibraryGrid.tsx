@@ -1,9 +1,10 @@
 import {useLayoutEffect,useRef,useState,type RefObject} from 'react';
-import {ContextMenu,Dialog} from 'radix-ui';
+import {Menu,MenuContextTrigger,MenuContent,MenuItem} from '@ui-sdk/react/menu';
+import {Dialog,DialogBackdrop,DialogContent,DialogTitle,DialogClose} from '@ui-sdk/react/dialog';
 import {Check,Copy,Film,FolderOpen,Layers2,Play,Plus,Trash2,Video,X,Zap} from 'lucide-react';
 import {api,clipTitle,time,type Clip,type Snapshot} from './api';
 import {clipGroups} from './projectState';
-import {Thumbnail,IconButton,Select,type SelectOption} from './components';
+import {Thumbnail,Select,type SelectOption} from './components';
 
 type LibraryItem={key:string;clip:Clip;versions:Clip[];source?:string};
 export function libraryItems(clips:Clip[]):LibraryItem[]{
@@ -38,14 +39,14 @@ function Cards({items,onOpen,onCopy,onDelete,picking=false,chosen=[],onToggle}:{
    </span>
   </button>;
   if(!onCopy||!onDelete)return card;
-  return <ContextMenu.Root key={key}>
-   <ContextMenu.Trigger asChild>{card}</ContextMenu.Trigger>
-   <ContextMenu.Portal><ContextMenu.Content className="dropdown clip-menu" aria-label="Действия с клипом">
-    <ContextMenu.Item onSelect={()=>onOpen?.(clip)}><Play size={15}/>Открыть</ContextMenu.Item>
-    <ContextMenu.Item onSelect={()=>onCopy(clip)}><Copy size={15}/>Скопировать</ContextMenu.Item>
-    <ContextMenu.Item className="danger-action" onSelect={()=>onDelete(clip)}><Trash2 size={15}/>Удалить</ContextMenu.Item>
-   </ContextMenu.Content></ContextMenu.Portal>
-  </ContextMenu.Root>;
+  return <Menu key={key}>
+   <MenuContextTrigger render={card}/>
+   <MenuContent className="dropdown clip-menu" aria-label="Действия с клипом">
+    <MenuItem value="open" onSelect={()=>onOpen?.(clip)}><Play size={15}/>Открыть</MenuItem>
+    <MenuItem value="copy" onSelect={()=>onCopy(clip)}><Copy size={15}/>Скопировать</MenuItem>
+    <MenuItem value="delete" className="danger-action" onSelect={()=>onDelete(clip)}><Trash2 size={15}/>Удалить</MenuItem>
+   </MenuContent>
+  </Menu>;
  })}</div>;
 }
 export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter,onOpen,onCopy,onDelete,onImport,onCapture,onError,state,scrollPosition}:{items:LibraryItem[];sourceFilter:string;sourceOptions:SelectOption[];onSourceFilter:(value:string)=>void;onOpen:(c:Clip)=>void;onCopy:(c:Clip)=>void;onDelete:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
@@ -79,5 +80,5 @@ export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter
 }
 export function ClipPicker({open,onOpenChange,clips,onAdd,onImport,limit=128}:{open:boolean;onOpenChange:(v:boolean)=>void;clips:Clip[];onAdd:(clips:Clip[])=>void;onImport:()=>void;limit?:number}){
  const [chosen,setChosen]=useState<string[]>([]);const toggle=(path:string)=>setChosen(v=>v.includes(path)?v.filter(p=>p!==path):v.length<limit?[...v,path]:v);const close=()=>{setChosen([]);onOpenChange(false);};
- return <Dialog.Root open={open} onOpenChange={v=>{setChosen([]);onOpenChange(v);}}><Dialog.Portal><Dialog.Overlay className="dialog-backdrop"/><Dialog.Content className="clip-picker" aria-describedby={undefined}><header className="dialog-header"><Dialog.Title>Добавить клипы</Dialog.Title><span className="spacer"/><button className="secondary-button" onClick={onImport}><Plus size={16}/>Импорт</button><Dialog.Close asChild><IconButton label="Закрыть выбор клипов"><X size={16}/></IconButton></Dialog.Close></header><div className="picker-scroll">{clips.length?<Cards items={libraryItems(clips)} picking chosen={chosen} onToggle={toggle}/>:<div className="picker-empty"><button className="primary-button" onClick={onImport}><Plus size={16}/>Добавить видео</button></div>}</div><footer className="picker-footer"><button className="secondary-button" onClick={close}>Отмена</button><button className="primary-button" disabled={!chosen.length} onClick={()=>{onAdd(chosen.map(path=>clips.find(c=>c.path===path)!).filter(Boolean));setChosen([]);onOpenChange(false);}}>Добавить{chosen.length?` ${chosen.length}`:''}</button></footer></Dialog.Content></Dialog.Portal></Dialog.Root>;
+ return <Dialog open={open} onOpenChange={v=>{setChosen([]);onOpenChange(v);}}><DialogBackdrop className="dialog-backdrop"/><DialogContent className="clip-picker"><header className="dialog-header"><DialogTitle>Добавить клипы</DialogTitle><span className="spacer"/><button className="secondary-button" onClick={onImport}><Plus size={16}/>Импорт</button><DialogClose className="icon-button" aria-label="Закрыть выбор клипов"><X size={16}/></DialogClose></header><div className="picker-scroll">{clips.length?<Cards items={libraryItems(clips)} picking chosen={chosen} onToggle={toggle}/>:<div className="picker-empty"><button className="primary-button" onClick={onImport}><Plus size={16}/>Добавить видео</button></div>}</div><footer className="picker-footer"><button className="secondary-button" onClick={close}>Отмена</button><button className="primary-button" disabled={!chosen.length} onClick={()=>{onAdd(chosen.map(path=>clips.find(c=>c.path===path)!).filter(Boolean));setChosen([]);onOpenChange(false);}}>Добавить{chosen.length?` ${chosen.length}`:''}</button></footer></DialogContent></Dialog>;
 }

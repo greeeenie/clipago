@@ -1,5 +1,6 @@
 import {useEffect,useState,type KeyboardEvent} from 'react';
-import {Dialog,Tabs} from 'radix-ui';
+import {Dialog,DialogBackdrop,DialogContent,DialogTitle,DialogClose} from '@ui-sdk/react/dialog';
+import {Tabs,TabsList,TabsTab,TabsPanel} from '@ui-sdk/react/tabs';
 import {ArrowUpRight,BookOpen,CircleDot,Clapperboard,Film,FolderOpen,Github,Info,Keyboard,RotateCcw,Settings2,X,type LucideIcon} from 'lucide-react';
 import {Select,Slider,Switch} from './components';
 import {api,snapBuffer,type Settings,type Snapshot,type Encoder,type EditorHotkeys} from './api';
@@ -68,26 +69,26 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
   const updateMessage=updates.error||(updates.status?.available
     ? (updates.status.ui_only?'Обновится интерфейс. Запись продолжится.':'Для установки Clipago перезапустится.')
     : updates.status?'Установлена последняя версия':'');
-  return <Dialog.Root open={open} onOpenChange={next=>{if(!next){setSection(sections[0]);setBinding(undefined);}onOpenChange(next);}}><Dialog.Portal><Dialog.Overlay className="dialog-backdrop settings-backdrop"/><Dialog.Content className="settings-dialog" aria-describedby={undefined} onEscapeKeyDown={event=>{if(binding){event.preventDefault();setBinding(undefined);}}}>
-    <Tabs.Root className="settings-layout" value={section.id} orientation="vertical" onValueChange={id=>{
+  return <Dialog open={open} onOpenChange={(next,details)=>{if(!next&&binding&&details.reason==='escape-key'){details.cancel();setBinding(undefined);return;}if(!next){setSection(sections[0]);setBinding(undefined);}onOpenChange(next);}}><DialogBackdrop className="dialog-backdrop settings-backdrop"/><DialogContent className="settings-dialog">
+    <Tabs className="settings-layout" value={section.id} orientation="vertical" onValueChange={id=>{
       const next=sections.find(item=>item.id===id);
       if(next)setSection(next);
       setBinding(undefined);
     }}>
       <aside className="settings-sidebar">
-        <Dialog.Title>Настройки</Dialog.Title>
-        <Tabs.List className="settings-nav" aria-label="Разделы настроек">
-          {sections.map(({id,title,icon:Icon})=><Tabs.Trigger className="settings-tab" key={id} value={id}><Icon size={18} aria-hidden="true"/>{title}{id==='about'&&updates.status?.available&&<span className="settings-update-indicator" aria-label="Доступно обновление"/>}</Tabs.Trigger>)}
-        </Tabs.List>
+        <DialogTitle>Настройки</DialogTitle>
+        <TabsList className="settings-nav" aria-label="Разделы настроек">
+          {sections.map(({id,title,icon:Icon})=><TabsTab className="settings-tab" key={id} value={id}><Icon size={18} aria-hidden="true"/>{title}{id==='about'&&updates.status?.available&&<span className="settings-update-indicator" aria-label="Доступно обновление"/>}</TabsTab>)}
+        </TabsList>
       </aside>
       <header className="settings-toolbar">
         {section.id!=='about'&&<span className="settings-toolbar-title">{section.title}</span>}
         <div className="settings-toolbar-actions">
           {section.id!=='about'&&<button type="button" className="settings-reset" disabled={resetting||(section.id==='general'&&state.transitioning)} onClick={()=>void restoreDefaults()}><RotateCcw size={14} aria-hidden="true"/>Вернуть по умолчанию</button>}
-          <Dialog.Close asChild><button className="icon-button" aria-label="Закрыть настройки"><X size={17}/></button></Dialog.Close>
+          <DialogClose className="icon-button" aria-label="Закрыть настройки"><X size={17}/></DialogClose>
         </div>
       </header>
-      <Tabs.Content className="settings-tab-panel" value="general">
+      <TabsPanel className="settings-tab-panel" value="general">
         <div className="settings-stack">
           <section className="settings-section">
             <SettingsHeading title="Запись" icon={CircleDot}/>
@@ -112,8 +113,8 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
             </div>
           </section>
         </div>
-      </Tabs.Content>
-      <Tabs.Content className="settings-tab-panel" value="hotkeys">
+      </TabsPanel>
+      <TabsPanel className="settings-tab-panel" value="hotkeys">
         <div className="settings-stack">
           <section className="settings-section">
             <SettingsHeading title="Общие" icon={Keyboard}/>
@@ -129,8 +130,8 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
             </div>
           </section>
         </div>
-      </Tabs.Content>
-      <Tabs.Content className="settings-tab-panel" value="about">
+      </TabsPanel>
+      <TabsPanel className="settings-tab-panel" value="about">
         <div className="settings-stack">
           <div className="settings-brand"><img src={appIcon} alt=""/><div><strong>Clipago</strong><span>Версия {updates.status?.current??version}</span></div></div>
           <div className="settings-card settings-update">
@@ -146,7 +147,7 @@ export function SettingsDialog({open,onOpenChange,state,onError,updates,exportin
             <button className="settings-link" onClick={()=>void api.openHelp('docs').catch(e=>onError(String(e)))}><BookOpen size={16} aria-hidden="true"/>Документация<ArrowUpRight size={16} aria-hidden="true"/></button>
           </div>
         </div>
-      </Tabs.Content>
-    </Tabs.Root>
-  </Dialog.Content></Dialog.Portal></Dialog.Root>;
+      </TabsPanel>
+    </Tabs>
+  </DialogContent></Dialog>;
 }

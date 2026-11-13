@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {AlertDialog,Tabs,Tooltip} from 'radix-ui';
+import {AlertDialog,AlertDialogBackdrop,AlertDialogContent,AlertDialogTitle,AlertDialogDescription,AlertDialogClose} from '@ui-sdk/react/alert-dialog';
+import {Tabs,TabsList,TabsTab,TabsPanel} from '@ui-sdk/react/tabs';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
 import {AppWindow,ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
@@ -152,12 +153,12 @@ export function App(){
  }:undefined;
  const goTab=(next:'clips'|'movie')=>{setTab(next);if(next==='clips')setView('library');else setMovieVisited(true);};
  const action=<SaveAction busy={busy} disabled={!selected} onSave={()=>void saveClip()}/>;
- return <Tooltip.Provider><div className={`app ${quick?'quick-app':''}`}><Titlebar tab={tab} busy={busy} updateAvailable={!!updates.status?.available} onTab={goTab} onSettings={()=>setSettingsOpen(true)}/>
- {quick?<Tabs.Root className="quick-workspace" value={selected?.path??''} activationMode="manual" onValueChange={path=>{
+ return <div className={`app ${quick?'quick-app':''}`}><Titlebar tab={tab} busy={busy} updateAvailable={!!updates.status?.available} onTab={goTab} onSettings={()=>setSettingsOpen(true)}/>
+ {quick?<Tabs className="quick-workspace" value={selected?.path??null} activation="manual" onValueChange={path=>{
   const clip=pending?.find(item=>item.path===path);
   if(clip&&clip.path!==selectedPath.current)select(clip,hardware);
  }}>
-  {!!pending?.length&&<Tabs.List className="quick-tabs" aria-label="Быстрые клипы">
+  {!!pending?.length&&<TabsList className="quick-tabs" aria-label="Быстрые клипы">
    {pending.map(clip=>{
     const active=selected?.path===clip.path;
     const originalTitle=clipTitle(clip);
@@ -170,20 +171,20 @@ export function App(){
        if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}
        if(e.key==='Escape'){e.preventDefault();setNameDraft(null);}
       }}/>:<>
-       <Tabs.Trigger value={clip.path} title={title} disabled={busy}>{title}</Tabs.Trigger>
+       <TabsTab value={clip.path} title={title} disabled={busy}>{title}</TabsTab>
        {active&&<IconButton label="Изменить название клипа" disabled={busy} onClick={()=>setNameDraft(clipName)}><Pencil size={13}/></IconButton>}
       </>}
     </div>;
    })}
-  </Tabs.List>}
-  {selected?<Tabs.Content value={selected.path} className="quick-body">
+  </TabsList>}
+  {selected?<TabsPanel value={selected.path} className="quick-body">
    <Editor clip={selected} playHotkey={state?.settings.editor_hotkeys?.play} audioTracks={config?.audioTracks} selection={selection} onChange={setSelection} compact busy={busy} navigation={navigation} onViewed={()=>viewed(selected)} onSave={()=>void saveClip()}/>
-  </Tabs.Content>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
+  </TabsPanel>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{busy?action:<div className="quick-save-row">
    {action}
    <IconButton label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip(true)}><Copy size={17}/></IconButton>
   </div>}</footer>
- </Tabs.Root>:<>
+ </Tabs>:<>
  <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
   <main className="main-editor">
    <header className="editor-header">
@@ -214,19 +215,18 @@ export function App(){
   <Inspector clip={selected} selection={selection} config={config} setConfig={setConfig} state={state} busy={busy}>{action}</Inspector>
  </div>:null}</div>
  {state&&movieVisited&&<div className="workspace" hidden={tab!=='movie'}><MovieWorkspace clips={clips} state={state} project={project} setProject={setProject} onImport={imported} onViewed={viewed} onSettings={()=>setSettingsOpen(true)} onError={setError} suspended={settingsOpen||tab!=='movie'} onBusy={setBusy} onSaved={clip=>{add(clip);setMessage('Видео сохранено');}}/></div>}
- <AlertDialog.Root open={!!deleteTarget} onOpenChange={open=>{if(!open&&!deleting)setDeleteTarget(undefined);}}>
-  <AlertDialog.Portal><AlertDialog.Overlay className="dialog-backdrop"/>
-   <AlertDialog.Content className="delete-dialog" onEscapeKeyDown={e=>{if(deleting)e.preventDefault();}}>
-    <AlertDialog.Title>Удалить клип?</AlertDialog.Title>
-    <AlertDialog.Description>«{deleteTarget&&clipTitle(deleteTarget)}» переместится в корзину Windows.{deleteTarget&&project.segments.some(segment=>segment.path===deleteTarget.path)&&' Этот файл используется в монтаже.'}</AlertDialog.Description>
+ <AlertDialog open={!!deleteTarget} onOpenChange={(open,details)=>{if(!open){if(deleting)details.cancel();else setDeleteTarget(undefined);}}}>
+  <AlertDialogBackdrop className="dialog-backdrop"/>
+   <AlertDialogContent className="delete-dialog">
+    <AlertDialogTitle>Удалить клип?</AlertDialogTitle>
+    <AlertDialogDescription>«{deleteTarget&&clipTitle(deleteTarget)}» переместится в корзину Windows.{deleteTarget&&project.segments.some(segment=>segment.path===deleteTarget.path)&&' Этот файл используется в монтаже.'}</AlertDialogDescription>
     <div className="delete-actions">
-     <AlertDialog.Cancel className="secondary-button" disabled={deleting}>Отмена</AlertDialog.Cancel>
-     <AlertDialog.Action className="primary-button" disabled={deleting} onClick={e=>{e.preventDefault();void deleteClip();}}>Удалить</AlertDialog.Action>
+     <AlertDialogClose className="secondary-button" disabled={deleting}>Отмена</AlertDialogClose>
+     <button className="primary-button" disabled={deleting} onClick={()=>void deleteClip()}>Удалить</button>
     </div>
-   </AlertDialog.Content>
-  </AlertDialog.Portal>
- </AlertDialog.Root>
+   </AlertDialogContent>
+ </AlertDialog>
  </>}
  {state&&!quick&&<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} state={state} onError={setError} updates={updates} exporting={busy} saveProject={()=>{if(projectKey)localStorage.setItem(projectKey,JSON.stringify(project));}}/>}{message&&!visibleError&&<div className="toast" role="status">{message}</div>}{visibleError&&<div className="toast error-toast" role="alert"><span>{visibleError}</span><button aria-label="Закрыть уведомление" onClick={()=>{setError('');setState(current=>current?{...current,error:null}:current);void api.dismiss();}}><X size={15}/></button></div>}
- </div></Tooltip.Provider>;
+ </div>;
 }

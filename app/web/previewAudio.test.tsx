@@ -2,7 +2,6 @@
 import {useState} from 'react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
-import {Tooltip} from 'radix-ui';
 import {Editor} from './Editor';
 import {ExportPanel} from './ExportPanel';
 import {api,defaultConfig,type Clip,type Snapshot} from './api';
@@ -22,7 +21,7 @@ beforeEach(()=>{
  vi.spyOn(api,'previewAudio').mockResolvedValue([{index:1,path:'game.m4a'},{index:2,path:'discord.m4a'}]);
 });
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
-function Harness(){const [config,setConfig]=useState(defaultConfig(clip,false));return <Tooltip.Provider><Editor clip={clip} audioTracks={config.audioTracks} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/><ExportPanel clip={clip} config={config} setConfig={setConfig} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/></Tooltip.Provider>;}
+function Harness(){const [config,setConfig]=useState(defaultConfig(clip,false));return <><Editor clip={clip} audioTracks={config.audioTracks} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/><ExportPanel clip={clip} config={config} setConfig={setConfig} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/></>;}
 it('switches mute preview stems immediately without seeking or restarting the remaining sound',async()=>{
  const {container}=render(<Harness/>);await waitFor(()=>expect(audio).toHaveLength(2));
  const video=container.querySelector('video')!;video.currentTime=12;
@@ -44,20 +43,20 @@ it('preview volume affects every stem, survives mute, and does not change export
  fireEvent.click(screen.getByRole('button',{name:'Выключить звук'}));expect(audio.every(a=>a.muted)).toBe(true);
  fireEvent.click(screen.getByRole('button',{name:'Включить звук'}));expect(audio[0].volume).toBe(.01);expect(audio[0].muted).toBe(false);
  expect(localStorage.getItem('rewind.preview.volume')).toBe('0.01');
- expect(screen.getByRole('switch',{name:'Discord'}).getAttribute('data-state')).toBe('checked');
+ expect(screen.getByRole('switch',{name:'Discord'}).getAttribute('aria-checked')).toBe('true');
 });
 it('keeps sound synchronized on seeking, pausing and hiding the editor',async()=>{
- const {container,rerender}=render(<Tooltip.Provider><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></Tooltip.Provider>);
+ const {container,rerender}=render(<><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></>);
  await waitFor(()=>expect(audio).toHaveLength(2));const video=container.querySelector('video')!;
  await act(async()=>{await video.play();});video.currentTime=23;fireEvent.seeking(video);expect(audio[0].paused).toBe(true);fireEvent.seeked(video);expect(audio[0].currentTime).toBe(23);expect(audio[0].paused).toBe(false);
- rerender(<Tooltip.Provider><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:23}} onChange={()=>{}} suspended/></Tooltip.Provider>);
+ rerender(<><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:23}} onChange={()=>{}} suspended/></>);
  expect(video.paused).toBe(true);expect(audio.every(a=>a.paused)).toBe(true);
 });
 it('never leaks the original mix while application audio is preparing',async()=>{
  let resolve!:(v:{index:number;path:string}[])=>void;vi.mocked(api.previewAudio).mockReturnValue(new Promise(done=>{resolve=done;}));
- const {container,rerender}=render(<Tooltip.Provider><Editor clip={clip} audioTracks={[1,2]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></Tooltip.Provider>);
+ const {container,rerender}=render(<><Editor clip={clip} audioTracks={[1,2]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></>);
  const video=container.querySelector('video')!;await act(async()=>{await video.play();});
- rerender(<Tooltip.Provider><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></Tooltip.Provider>);
+ rerender(<><Editor clip={clip} audioTracks={[1]} selection={{start:0,end:45,cursor:0}} onChange={()=>{}}/></>);
  expect(video.muted).toBe(true);expect(video.paused).toBe(true);
  await act(async()=>resolve([{index:1,path:'game.m4a'},{index:2,path:'discord.m4a'}]));
  expect(video.paused).toBe(false);expect(audio[1].muted).toBe(true);expect(video.muted).toBe(true);
@@ -65,12 +64,12 @@ it('never leaks the original mix while application audio is preparing',async()=>
 it('does not resume pending playback behind settings or leave stems running after unmount',async()=>{
  let resolve!:(v:{index:number;path:string}[])=>void;vi.mocked(api.previewAudio).mockReturnValue(new Promise(done=>{resolve=done;}));
  const props={clip,audioTracks:[1],selection:{start:0,end:45,cursor:0},onChange:()=>{}};
- const {container,rerender,unmount}=render(<Tooltip.Provider><Editor {...props} audioTracks={[1,2]}/></Tooltip.Provider>);
+ const {container,rerender,unmount}=render(<><Editor {...props} audioTracks={[1,2]}/></>);
  const video=container.querySelector('video')!;
  await act(async()=>{await video.play();});
- rerender(<Tooltip.Provider><Editor {...props}/></Tooltip.Provider>);
+ rerender(<><Editor {...props}/></>);
  expect(video.paused).toBe(true);
- rerender(<Tooltip.Provider><Editor {...props} suspended/></Tooltip.Provider>);
+ rerender(<><Editor {...props} suspended/></>);
  await act(async()=>resolve([{index:1,path:'game.m4a'},{index:2,path:'discord.m4a'}]));
  expect(video.paused).toBe(true);expect(audio.every(a=>a.paused)).toBe(true);
  unmount();expect(audio.every(a=>a.paused&&!a.hasAttribute('src'))).toBe(true);
@@ -78,10 +77,10 @@ it('does not resume pending playback behind settings or leave stems running afte
 it('mutes a legacy mixed track directly without preparing stems',()=>{
  const legacy={...clip,audio_tracks:[{index:0,name:'Системный звук'}],audio_mix_index:null};
  const props={clip:legacy,selection:{start:0,end:45,cursor:0},onChange:()=>{}};
- const {container,rerender}=render(<Tooltip.Provider><Editor {...props} audioTracks={[0]}/></Tooltip.Provider>);
+ const {container,rerender}=render(<><Editor {...props} audioTracks={[0]}/></>);
  const video=container.querySelector('video')!;expect(video.muted).toBe(false);
- rerender(<Tooltip.Provider><Editor {...props} audioTracks={[]}/></Tooltip.Provider>);expect(video.muted).toBe(true);
- rerender(<Tooltip.Provider><Editor {...props} audioTracks={[0]}/></Tooltip.Provider>);expect(video.muted).toBe(false);
+ rerender(<><Editor {...props} audioTracks={[]}/></>);expect(video.muted).toBe(true);
+ rerender(<><Editor {...props} audioTracks={[0]}/></>);expect(video.muted).toBe(false);
  expect(api.previewAudio).not.toHaveBeenCalled();
 });
 it('does not restart a shorter audio stem after it ends',async()=>{

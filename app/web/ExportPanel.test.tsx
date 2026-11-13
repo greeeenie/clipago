@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import {beforeEach,afterEach,expect,it,vi} from 'vitest';
 import {cleanup,fireEvent,render,screen} from '@testing-library/react';
-import {Tooltip} from 'radix-ui';
 import {ExportPanel} from './ExportPanel';
 import {api,defaultConfig,type Clip,type Snapshot} from './api';
 const mocks=vi.hoisted(()=>({invoke:vi.fn().mockResolvedValue(null)}));
@@ -11,7 +10,7 @@ beforeEach(()=>vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disc
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 it('groups application processes and removes every Discord stream together',()=>{
  const change=vi.fn();const config=defaultConfig(clip,false);
- render(<Tooltip.Provider><ExportPanel clip={clip} config={config} setConfig={change} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/></Tooltip.Provider>);
+ render(<ExportPanel clip={clip} config={config} setConfig={change} start={0} end={45} onClose={()=>{}} onExport={()=>{}} busy={false} state={{encoders:['Cpu']} as Snapshot}/>);
  expect(screen.getAllByRole('switch')).toHaveLength(2);
  fireEvent.click(screen.getByRole('switch',{name:'Discord'}));
  expect(change.mock.calls[0][0].audioTracks).toEqual([1]);
