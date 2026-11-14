@@ -297,10 +297,11 @@
 .quick-editor .player-volume output{display:none}
 .timeline.compact .timeline-track{height:42px}
 .quick-footer{padding:12px;flex-shrink:0}
-.quick-save-row{display:grid;grid-template-columns:36px minmax(0,240px) 36px;justify-content:center;align-items:center;gap:8px}
-.quick-save-row>.primary-button{grid-column:2}
+.quick-save-row{display:grid;grid-template-columns:36px 36px minmax(0,240px) 36px 36px;justify-content:center;align-items:center;gap:8px}
+.quick-save-row>.primary-button{grid-column:3}
 .quick-save-row>.icon-button{width:36px;height:36px;background:var(--surface);border:1px solid var(--line-strong)}
 .quick-save-row>.icon-button:hover:enabled{background:var(--raised)}
+.quick-discord-icon{width:17px;height:17px;background:currentColor;mask:url('./discord.svg') center/contain no-repeat}
 .quick-footer .save-actions{justify-content:space-between}
 .quick-app .toast{bottom:60px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);border:1px solid #45454d;border-radius:8px;background:#25252b;color:#eeeef2;padding:10px 16px;font-size:12px;z-index:3000;max-width:calc(100vw - 32px)}

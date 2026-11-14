@@ -4,7 +4,7 @@ import {Tabs,TabsList,TabsTab,TabsPanel} from '@ui-sdk/react/tabs';
 import {getCurrentWindow} from '@tauri-apps/api/window';
 import {listen} from '@tauri-apps/api/event';
 import {AppWindow,ArrowLeft,Copy,FolderOpen,Gamepad2,LoaderCircle,Minus,Pencil,Settings,Square,Trash2,X} from 'lucide-react';
-import {api,clipSourceLabel,clipTitle,defaultConfig,type Clip,type Snapshot,type ExportConfig,type SourceFilter,type MovieProject} from './api';
+import {api,clipSourceLabel,clipTitle,defaultConfig,discordSizeMb,withPreset,type Clip,type Snapshot,type ExportConfig,type SourceFilter,type MovieProject} from './api';
 import {IconButton,SaveAction,type SelectOption} from './components';
 import {Editor} from './Editor';
 import type {Selection} from './Timeline';
@@ -87,13 +87,15 @@ export function App(){
  const imported=()=>void api.import().then(clip=>{if(clip){add(clip);select(clip,hardware);}}).catch(e=>setError(String(e)));
  const capture=async()=>{if(!state||captureRequest.current)return;captureRequest.current=true;setCapturing(true);try{if(state.replay_status==='ready'||state.recording)await api.saveReplay();else await api.record(true);}catch(e){setError(String(e));setCapturing(false);captureRequest.current=false;}};
  const finishName=(value:string)=>{setClipName(value.trim());setNameDraft(null);};
- const saveClip=useCallback(async(copy=false)=>{
+ const saveClip=useCallback(async(mode:'save'|'copy'|'discord'='save')=>{
   if(!selected||!config||saving.current||busy)return;
   setError('');
   saving.current=true;setBusy(true);
   try{
-   const saved=await api.export(selected,selection.start,selection.end,structuredClone(config),quick?clipName.trim():undefined,copy);
+   const output=mode==='discord'?withPreset(config,'discord',selected):config;
+   const saved=await api.export(selected,selection.start,selection.end,output,quick?clipName.trim():undefined,mode!=='save');
    if(saved&&!quick){add(saved);select(saved,hardware);setMessage('Копия сохранена');}
+   if(saved&&mode==='discord')setMessage('Видео для Discord скопировано');
   }catch(e){setError(String(e));}
   finally{saving.current=false;setBusy(false);}
  },[selected,config,busy,hardware,selection,clipName,add,select]);
@@ -182,7 +184,8 @@ export function App(){
   </TabsPanel>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{busy?action:<div className="quick-save-row">
    {action}
-   <IconButton label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip(true)}><Copy size={17}/></IconButton>
+   <IconButton label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip('copy')}><Copy size={17}/></IconButton>
+   <IconButton label={`Скопировать для Discord · до ${discordSizeMb} МБ`} disabled={!selected} onClick={()=>void saveClip('discord')}><span className="quick-discord-icon" aria-hidden="true"/></IconButton>
   </div>}</footer>
  </Tabs>:<>
  <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
