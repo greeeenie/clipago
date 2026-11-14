@@ -8,7 +8,8 @@ export type Snapshot={profile_id?:string;settings:Settings;recording:boolean;tra
 export type Format='Mp4'|'Mkv'|'Webm'|'Gif';
 export type Codec='H264'|'Hevc'|'Vp9';
 export type ExportOptions={format:Format;codec:Codec;fps:number|null;hardware:boolean};
-export type Compression='copy'|'balanced'|'compact'|'custom';
+export const discordSizeMb=20;
+export type Compression='copy'|'balanced'|'compact'|'discord'|'custom';
 export type ExportConfig={automatic:boolean;audioTracks:number[];preset:Compression;quality:'Bitrate'|'Target'|'Copy';bitrate:number;target:number;height:number|null;encoding:ExportOptions};
 export const api={
   snapshot:()=>invoke<Snapshot>('snapshot'),
@@ -81,6 +82,7 @@ export function defaultConfig(clip:Clip,hardware:boolean):ExportConfig{
 }
 export function withPreset(config:ExportConfig,preset:Compression,clip:Clip):ExportConfig{
   if(preset==='copy')return {...config,preset,quality:'Copy',height:null,encoding:{...config.encoding,fps:null,hardware:false}};
+  if(preset==='discord')return {...config,preset,automatic:false,quality:'Target',target:discordSizeMb,encoding:{...config.encoding,format:'Mp4',codec:'H264',hardware:false}};
   return effectiveConfig(clip,{...config,preset,automatic:true,quality:'Bitrate'});
 }
 export type MovieSegment={id:string;path:string;start:number;end:number;config:ExportConfig;gapBefore?:number};

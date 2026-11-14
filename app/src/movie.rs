@@ -138,11 +138,11 @@ pub fn render(
     let gif = options.format == OutputFormat::Gif;
     let audio = !gif && inputs.iter().any(|i| !i.audio.is_empty());
     let target = if output.quality == Quality::Target {
-        Some(media::target_video_bitrate(
-            output.target_mb * 1e6,
-            duration,
-            audio,
-        )?)
+        let max_bytes = output.target_mb * 1e6;
+        Some((
+            media::target_video_bitrate(max_bytes, duration, audio)?,
+            max_bytes,
+        ))
     } else {
         None
     };
@@ -163,8 +163,8 @@ pub fn render(
         .into()
     };
     let partial = work.0.join(format!("movie.{}", options.format.extension()));
-    for pass in 1..=if target.is_some() { 2 } else { 1 } {
-        let sound = audio && !(target.is_some() && pass == 1);
+    media::encode_with_size_limit(&partial, target, |pass, bitrate| {
+        let sound = audio && !(bitrate.is_some() && pass == 1);
         let mut command = media::command(media::tool(ffmpeg));
         command.args([
             "-hide_banner",
@@ -252,7 +252,7 @@ pub fn render(
                 "-pix_fmt",
                 "yuv420p",
                 "-b:v",
-                &target
+                &bitrate
                     .unwrap_or((output.bitrate_mbps * 1e6) as u64)
                     .to_string(),
             ]);
@@ -276,12 +276,12 @@ pub fn render(
                 }
                 _ => {}
             }
-            if target.is_some() {
+            if bitrate.is_some() {
                 command
                     .args(["-pass", &pass.to_string(), "-passlogfile"])
                     .arg(work.0.join("pass"));
             }
-            if target.is_some() && pass == 1 {
+            if bitrate.is_some() && pass == 1 {
                 command.args(["-an", "-f", "null"]).arg(if cfg!(windows) {
                     "NUL"
                 } else {
@@ -315,8 +315,8 @@ pub fn render(
                     .arg(&partial);
             }
         }
-        media::run_ffmpeg(&mut command, &work.0, &cancel)?;
-    }
+        media::run_ffmpeg(&mut command, &work.0, &cancel)
+    })?;
     ensure!(!cancel.load(Ordering::Relaxed), "Операция отменена");
     media::publish(&partial, &output.output)?;
     Ok(output.output.clone())

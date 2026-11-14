@@ -717,6 +717,30 @@ pub fn target_video_bitrate(bytes: f64, duration: f64, audio: bool) -> Result<u6
     Ok(bitrate as u64)
 }
 
+pub(crate) fn encode_with_size_limit(
+    partial: &Path,
+    target: Option<(u64, f64)>,
+    mut encode: impl FnMut(u8, Option<u64>) -> Result<()>,
+) -> Result<()> {
+    let Some((mut bitrate, max_bytes)) = target else {
+        return encode(1, None);
+    };
+    for _ in 0..3 {
+        encode(1, Some(bitrate))?;
+        encode(2, Some(bitrate))?;
+        let bytes = fs::metadata(partial)?.len() as f64;
+        if bytes <= max_bytes {
+            return Ok(());
+        }
+        // Leave room for audio and container overhead during the retry.
+        bitrate = (bitrate as f64 * (max_bytes / bytes) * 0.90) as u64;
+        if bitrate < 64_000 {
+            break;
+        }
+    }
+    bail!("Видео не уложилось в заданный размер. Сократите ролик или увеличьте лимит.")
+}
+
 pub fn export(ffmpeg: &str, request: &Export, cancel: Arc<AtomicBool>) -> Result<PathBuf> {
     let audio_tracks = selected_audio(&request.clip, request.audio_tracks.as_deref())?;
     let duration = request.end - request.start;
@@ -805,12 +829,12 @@ pub fn export(ffmpeg: &str, request: &Export, cancel: Arc<AtomicBool>) -> Result
         ".export",
     )?;
     let partial = work.0.join(format!("video.{}", options.format.extension()));
-    let target_rate = if request.quality == Quality::Target {
-        Some(target_video_bitrate(
-            request.target_mb * 1_000_000.0,
-            duration,
-            !audio_tracks.is_empty(),
-        )?)
+    let target = if request.quality == Quality::Target {
+        let max_bytes = request.target_mb * 1_000_000.0;
+        Some((
+            target_video_bitrate(max_bytes, duration, !audio_tracks.is_empty())?,
+            max_bytes,
+        ))
     } else {
         None
     };
@@ -836,7 +860,7 @@ pub fn export(ffmpeg: &str, request: &Export, cancel: Arc<AtomicBool>) -> Result
         }
         .into()
     };
-    for pass in 1..=if target_rate.is_some() { 2 } else { 1 } {
+    encode_with_size_limit(&partial, target, |pass, target_rate| {
         let mut cmd = command(tool(ffmpeg));
         cmd.args([
             "-hide_banner",
@@ -935,8 +959,8 @@ pub fn export(ffmpeg: &str, request: &Export, cancel: Arc<AtomicBool>) -> Result
                 cmd.arg(&partial);
             }
         }
-        run_ffmpeg(&mut cmd, &work.0, &cancel)?;
-    }
+        run_ffmpeg(&mut cmd, &work.0, &cancel)
+    })?;
     publish(&partial, &request.output).context("Не удалось сохранить экспорт")?;
     Ok(request.output.clone())
 }
