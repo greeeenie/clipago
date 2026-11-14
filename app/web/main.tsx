@@ -92,6 +92,11 @@ export function App(){
   setError('');
   saving.current=true;setBusy(true);
   try{
+   if(mode==='discord'&&selection.start===0&&selection.end===selected.duration&&selected.bytes<=discordSizeMb*1_000_000){
+    await api.copyClip(selected.path);
+    setMessage('Видео для Discord скопировано');
+    return;
+   }
    const output=mode==='discord'?withPreset(config,'discord',selected):config;
    const saved=await api.export(selected,selection.start,selection.end,output,quick?clipName.trim():undefined,mode!=='save');
    if(saved&&!quick){add(saved);select(saved,hardware);setMessage('Копия сохранена');}
