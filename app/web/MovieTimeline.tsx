@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type PointerEvent} from 'react';
 import {Copy,GripVertical,Magnet,Minus,Plus,Redo2,Trash2,Undo2} from 'lucide-react';
-import {time,filename,type Clip,type EditorHotkeys,type MovieSegment} from './api';
+import {clipTitle,time,filename,type Clip,type EditorHotkeys,type MovieSegment} from './api';
 import {IconButton,Thumbnail,Slider} from './components';
 import type {ClipDrop} from './clipDrag';
 import {moveSegmentPlacement,segmentsAtPositions,type MovieTiming} from './movieTiming';
@@ -44,8 +44,8 @@ export function MovieTimeline({timing,clips,active,cursor,busy,canUndo,canRedo,c
   <div className="movie-ruler" onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);seek(e);}} onPointerMove={e=>{if(e.buttons===1)seek(e);}}>{Array.from({length:Math.floor(duration/step)+1},(_,i)=><span key={i} style={{left:i*step*scale}}>{time(i*step)}</span>)}</div>
   <div className="movie-segments" onPointerDown={e=>{if(e.target===e.currentTarget)seek(e);}}>
    {parts.map(({segment,start,duration},index)=>{const clip=clips.find(c=>c.path===segment.path);return <article key={segment.id} className={`movie-segment ${active===segment.id?'active':''} ${draft?.id===segment.id?'moving':''}`} style={{left:start*scale,width:Math.max(1,duration*scale)}} data-movie-drop={index} onDragOver={e=>e.preventDefault()} onDrop={e=>nativeDrop(e,index)}>
-    <button className="segment-cover" draggable={false} aria-label={`Выбрать фрагмент ${index+1}: ${filename(segment.path)}`} onPointerDown={e=>begin(e,segment.id,start)} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=undefined;setDraft(undefined);}} onClick={()=>{if(blockClick.current)return;onSelect(segment.id);}}>{clip?<Thumbnail clip={clip} seconds={(segment.start+segment.end)/2}/>:<span className="missing-media">Недоступен</span>}<GripVertical className="segment-grip start" size={13}/><GripVertical className="segment-grip end" size={13}/></button>
-    <div className="segment-caption"><span>{clip?.source??filename(segment.path)}</span><span>{time(duration)}</span></div>
+    <button className="segment-cover" draggable={false} aria-label={`Выбрать фрагмент ${index+1}: ${clip?clipTitle(clip):filename(segment.path)}`} onPointerDown={e=>begin(e,segment.id,start)} onPointerMove={move} onPointerUp={end} onPointerCancel={()=>{drag.current=undefined;setDraft(undefined);}} onClick={()=>{if(blockClick.current)return;onSelect(segment.id);}}>{clip?<Thumbnail clip={clip} seconds={(segment.start+segment.end)/2}/>:<span className="missing-media">Недоступен</span>}<GripVertical className="segment-grip start" size={13}/><GripVertical className="segment-grip end" size={13}/></button>
+    <div className="segment-caption"><span>{clip?clipTitle(clip):filename(segment.path)}</span><span>{time(duration)}</span></div>
    </article>;})}
    <button className="add-segment" style={{left:(parts.at(-1)?.end??0)*scale}} data-movie-drop={timing.parts.length} aria-label="Добавить клипы" onClick={onAdd} disabled={busy||timing.parts.length>=128}><Plus size={22}/></button>
   </div>

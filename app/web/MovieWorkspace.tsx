@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {Dialog,DialogBackdrop,DialogContent,DialogTitle,DialogClose} from '@ui-sdk/react/dialog';
 import {listen} from '@tauri-apps/api/event';
 import {Film,Pencil,Plus,Save,SlidersHorizontal,X} from 'lucide-react';
-import {api,defaultConfig,filename,time,type Clip,type ExportConfig,type MovieProject,type Snapshot} from './api';
+import {api,clipTitle,defaultConfig,filename,time,type Clip,type ExportConfig,type MovieProject,type Snapshot,type SourceFilter} from './api';
 import {IconButton,SaveAction} from './components';
 import {Editor} from './Editor';
 import {ExportPanel} from './ExportPanel';
@@ -16,8 +16,8 @@ import {editorHotkeys,hotkeyLabel,keyCombination} from './editorHotkeys';
 import type {ClipDrop} from './clipDrag';
 import type {Selection} from './Timeline';
 
-type Props={clips:Clip[];state:Snapshot;project:MovieProject;setProject:(p:MovieProject)=>void;onImport:()=>void;onViewed:(c:Clip)=>void;onSettings:()=>void;onError:(s:string)=>void;onSaved:(c:Clip)=>void;onBusy:(busy:boolean)=>void;suspended:boolean};
-export function MovieWorkspace({clips,state,project,setProject,onImport,onViewed,onError,onSaved,onBusy,suspended}:Props){
+type Props={clips:Clip[];sourceFilters?:Record<string,SourceFilter>;state:Snapshot;project:MovieProject;setProject:(p:MovieProject)=>void;onImport:()=>void;onViewed:(c:Clip)=>void;onSettings:()=>void;onError:(s:string)=>void;onSaved:(c:Clip)=>void;onBusy:(busy:boolean)=>void;suspended:boolean};
+export function MovieWorkspace({clips,sourceFilters,state,project,setProject,onImport,onViewed,onError,onSaved,onBusy,suspended}:Props){
  const [active,setActive]=useState(project.segments[0]?.id??'');const [cursor,setCursor]=useState(0);const [playing,setPlaying]=useState(false);
  const [inspector,setInspector]=useState(true);const [exportOpen,setExportOpen]=useState(false);const [picker,setPicker]=useState(false);const [busy,setBusy]=useState(false);const [zoom,setZoom]=useState(1);const [name,setName]=useState(project.name);
  const saving=useRef(false);const nameInput=useRef<HTMLInputElement>(null);const history=useProjectHistory(project,setProject);
@@ -104,8 +104,8 @@ export function MovieWorkspace({clips,state,project,setProject,onImport,onViewed
  {preview&&previewClip&&resolved?<Editor key={preview.segment.id} clip={previewClip} selection={{start:preview.segment.start,end:preview.segment.end,cursor:resolved.sourceTime}} audioTracks={preview.segment.config.audioTracks} onChange={selection=>setCursor(Math.min(preview.end,preview.start+selection.cursor-preview.segment.start))} showTimeline={false} displayTime={{cursor,duration:timing.duration}} autoPlay={playing} keyboardPlayback={false} onPlaybackChange={value=>{if(value&&cursor>=timing.duration)setCursor(0);setPlaying(value);}} onRangeEnd={()=>{setCursor(preview.end);if(preview.end>=timing.duration)setPlaying(false);}} busy={busy} suspended={suspended||picker||exportOpen} onViewed={()=>onViewed(previewClip)}/>:timing.parts.length?<MovieGapPreview cursor={cursor} duration={timing.duration} playing={playing} onToggle={togglePlay}/>:<div className="empty-state"><Film size={40} strokeWidth={1}/><button className="primary-button" onClick={()=>setPicker(true)}><Plus size={16}/>Добавить клипы</button></div>}
  <MovieTimeline timing={timing} clips={clips} active={active} cursor={cursor} busy={busy} canUndo={history.canUndo} canRedo={history.canRedo} canSplit={canSplit} onUndo={undo} onRedo={redo} onSelect={focus} onSeek={seek} onDrop={drop} onMove={move} onAdd={()=>{setPlaying(false);setPicker(true);}} onDelete={remove} onDuplicate={duplicate} onSplit={split} snapping={snapping} onSnapping={toggleSnapping} hotkeys={hotkeys} zoom={zoom} onZoom={setZoom}/>
  </main>
- {inspector&&selected&&selectedClip&&<aside className="inspector fragment-inspector" aria-label="Настройки фрагмента"><header className="panel-header"><h2 title={filename(selectedClip.path)}>{filename(selectedClip.path)}</h2></header><ExportPanel embedded mode="segment" clip={selectedClip} config={selected.segment.config} setConfig={changeConfig} start={selected.segment.start} end={selected.segment.end} state={state} busy={busy} onClose={()=>{}} onExport={()=>{}} advancedContent={<TrimFields clip={selectedClip} selection={selectedRange} onChange={changeRange} disabled={busy}/>}/></aside>}
- <ClipPicker open={picker} onOpenChange={setPicker} clips={clips} onAdd={items=>add(items)} onImport={onImport} limit={128-project.segments.length}/>
+ {inspector&&selected&&selectedClip&&<aside className="inspector fragment-inspector" aria-label="Настройки фрагмента"><header className="panel-header"><h2 title={clipTitle(selectedClip)}>{clipTitle(selectedClip)}</h2></header><ExportPanel embedded mode="segment" clip={selectedClip} config={selected.segment.config} setConfig={changeConfig} start={selected.segment.start} end={selected.segment.end} state={state} busy={busy} onClose={()=>{}} onExport={()=>{}} advancedContent={<TrimFields clip={selectedClip} selection={selectedRange} onChange={changeRange} disabled={busy}/>}/></aside>}
+ <ClipPicker open={picker} onOpenChange={setPicker} clips={clips} sourceFilters={sourceFilters} onAdd={items=>add(items)} onImport={onImport} limit={128-project.segments.length}/>
  <Dialog open={exportOpen} onOpenChange={(value,details)=>{if(busy)details.cancel();else setExportOpen(value);}}><DialogBackdrop className="dialog-backdrop"/><DialogContent className="movie-export-dialog"><header className="dialog-header"><DialogTitle>Экспорт видео</DialogTitle><DialogClose className="icon-button" aria-label="Закрыть экспорт" disabled={busy}><X size={17}/></DialogClose></header><div className="movie-export-name"><span>{project.name}</span><span>{time(timing.duration)}</span></div><ExportPanel embedded mode="movie" clip={summary} config={output} setConfig={value=>commit({...project,output:value})} start={0} end={timing.duration} state={state} busy={busy} onClose={()=>{}} onExport={()=>{}}/><footer className="export-dialog-footer"><SaveAction label="Экспортировать" busy={busy} onSave={()=>void render()}/></footer></DialogContent></Dialog>
  </div>;
 }

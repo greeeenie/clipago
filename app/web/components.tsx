@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,memo} from 'react';
 import type {ButtonHTMLAttributes,ReactNode} from 'react';
-import {Select as SdkSelect,SelectTrigger,SelectContent,SelectItem,SelectItemText,SelectItemIndicator,SelectGroup,SelectGroupLabel} from '@ui-sdk/react/select';
+import {Select as SdkSelect,SelectTrigger,SelectContent,SelectItem,SelectItemText,SelectItemIcon,SelectItemIndicator,SelectGroup,SelectGroupLabel} from '@ui-sdk/react/select';
 import {Slider as SdkSlider,SliderControl,SliderTrack,SliderIndicator,SliderThumb} from '@ui-sdk/react/slider';
 import {Switch as SdkSwitch,SwitchThumb} from '@ui-sdk/react/switch';
 import {Tooltip,TooltipTrigger,TooltipContent} from '@ui-sdk/react/tooltip';
@@ -23,7 +23,11 @@ export function Select<T extends string>({value,onChange,options,label,disabled=
   });
   const optionLabel=(option:SelectOption<T>)=>option.icon?<span className="select-icon-label">{option.icon}<span>{option.label}</span></span>:option.label;
   const item=(option:SelectOption<T>)=><SelectItem className="select-item" key={option.value} value={option.value} label={option.label}>
-    <SelectItemText>{optionLabel(option)}</SelectItemText><SelectItemIndicator><Check size={14}/></SelectItemIndicator>
+    <span className="select-icon-label">
+     {option.icon&&<SelectItemIcon className="select-item-icon">{option.icon}</SelectItemIcon>}
+     <SelectItemText>{option.label}</SelectItemText>
+    </span>
+    <SelectItemIndicator><Check size={14}/></SelectItemIndicator>
   </SelectItem>;
   const selected=options.find(option=>option.value===value);
   return <SdkSelect value={value} onValueChange={v=>{if(v!==null)onChange(v);}} disabled={disabled}>
@@ -41,11 +45,23 @@ export function Slider({value,onChange,onCommit,min,max,step=1,label,valueText,d
  </SdkSlider>;
 }
 const cache=new Map<string,string>();const pending=new Map<string,Promise<string>>();
-function getThumbnail(path:string,seconds:number){const key=`${path}@${seconds.toFixed(2)}`;if(cache.has(key))return Promise.resolve(cache.get(key)!);if(pending.has(key))return pending.get(key)!;
+function getThumbnail(path:string,seconds:number,key:string){if(cache.has(key))return Promise.resolve(cache.get(key)!);if(pending.has(key))return pending.get(key)!;
   const job=api.thumbnail(path,seconds).then(data=>{cache.set(key,data);while(cache.size>128)cache.delete(cache.keys().next().value!);return data;}).finally(()=>pending.delete(key));pending.set(key,job);return job;
 }
 export const Thumbnail=memo(function Thumbnail({clip,seconds=0}:{clip:Clip;seconds?:number}){
-  const ref=useRef<HTMLSpanElement>(null);const [src,setSrc]=useState<string>();
-  useEffect(()=>{let live=true;const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();getThumbnail(clip.path,seconds).then(src=>{if(live)setSrc(src);}).catch(()=>{});}},{rootMargin:'100px'});if(ref.current)observer.observe(ref.current);return()=>{live=false;observer.disconnect();};},[clip.path,seconds]);
+  const ref=useRef<HTMLSpanElement>(null);
+  const key=`${clip.path}@${seconds.toFixed(2)}`;
+  const [loaded,setLoaded]=useState<{key:string;src:string}>();
+  const src=loaded?.key===key?loaded.src:cache.get(key);
+  useEffect(()=>{
+    let live=true;
+    const observer=new IntersectionObserver(entries=>{
+      if(!entries.some(entry=>entry.isIntersecting))return;
+      observer.disconnect();
+      void getThumbnail(clip.path,seconds,key).then(src=>{if(live)setLoaded({key,src});}).catch(()=>{});
+    },{rootMargin:'100px'});
+    if(ref.current)observer.observe(ref.current);
+    return()=>{live=false;observer.disconnect();};
+  },[clip.path,seconds,key]);
   return <span className="thumbnail" ref={ref}>{src?<img src={src} alt="" draggable={false}/>:<Film size={18}/>}</span>;
 });

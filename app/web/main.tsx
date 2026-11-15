@@ -170,8 +170,7 @@ export function App(){
  const sourceFilter=sourceOptions.some(option=>option.value===requestedSource)?requestedSource:'all';
  const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>sources.keys.get(item.key)===sourceFilter),[library,sources.keys,sourceFilter]);
  const items=useMemo(()=>quick?pending?.map(clip=>({key:clip.path,clip,versions:[clip]}))??[]:visibleItems,[pending,visibleItems]);
- const selectedIndex=items.findIndex(item=>item.key===selected?.path);
- const index=selectedIndex>=0?selectedIndex:items.findIndex(item=>item.key===rootPath);
+ const index=items.findIndex(item=>item.key===rootPath);
  const versions=(items[index]??library.find(item=>item.versions.some(clip=>clip.path===selected?.path)))?.versions??[];
  const original=versions.find(clip=>!clip.original_path);
  const edited=versions.filter(clip=>clip.original_path).reverse();
@@ -184,6 +183,8 @@ export function App(){
  }:undefined;
  const goTab=(next:'clips'|'movie')=>{setTab(next);if(next==='clips')setView('library');else setMovieVisited(true);};
  const action=<SaveAction busy={busy} disabled={!selected} onSave={()=>void saveClip()}/>;
+ const copyActions=<ClipCopyActions disabled={!selected} onCopy={()=>void saveClip('copy')} onDiscord={()=>void saveClip('discord')}/>;
+
  return <div className={`app ${quick?'quick-app':''}`}><Titlebar tab={tab} busy={busy} updateAvailable={!!updates.status?.available} onTab={goTab} onSettings={()=>setSettingsOpen(true)}/>
  {quick?<Tabs className="quick-workspace" value={selected?.path??null} activation="manual" onValueChange={path=>{
   const clip=pending?.find(item=>item.path===path);
@@ -213,10 +214,10 @@ export function App(){
   </TabsPanel>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{busy?action:<div className="quick-save-row">
    {action}
-   <ClipCopyActions disabled={!selected} onCopy={()=>void saveClip('copy')} onDiscord={()=>void saveClip('discord')}/>
+   {copyActions}
   </div>}</footer>
  </Tabs>:<>
- <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} status={libraryStatus} onRetry={()=>{setError('');setLibraryStatus('loading');}} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
+ <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} sourceFilters={sourceFilters} status={libraryStatus} onRetry={()=>{setError('');setLibraryStatus('loading');}} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
   <main className="main-editor">
    <header className="editor-header">
     <IconButton label="Назад к клипам" disabled={busy} onClick={()=>setView('library')}><ArrowLeft size={17}/></IconButton>
@@ -239,14 +240,13 @@ export function App(){
       return <button key={clip.path} disabled={busy} title={title} className={clip.path===selected.path?'active':''} aria-pressed={clip.path===selected.path} onClick={()=>openClip(clip)}>{title}</button>;
      })}
     </div>}
-    <div className="clip-copy-actions"><ClipCopyActions disabled={busy} onCopy={()=>void saveClip('copy')} onDiscord={()=>void saveClip('discord')}/></div>
     <IconButton label="Удалить клип" disabled={busy} onClick={()=>setDeleteTarget(selected)}><Trash2 size={16}/></IconButton>
    </header>
    <Editor clip={selected} playHotkey={state.settings.editor_hotkeys?.play} audioTracks={config.audioTracks} selection={selection} onChange={setSelection} busy={busy} suspended={settingsOpen||!!deleteTarget||tab!=='clips'} navigation={navigation} onViewed={()=>viewed(selected)}/>
   </main>
-  <Inspector clip={selected} selection={selection} config={config} setConfig={setConfig} state={state} busy={busy}>{action}</Inspector>
+  <Inspector clip={selected} selection={selection} config={config} setConfig={setConfig} state={state} busy={busy}>{action}{!busy&&copyActions}</Inspector>
  </div>:null}</div>
- {state&&movieVisited&&<div className="workspace" hidden={tab!=='movie'}><MovieWorkspace clips={clips} state={state} project={project} setProject={setProject} onImport={imported} onViewed={viewed} onSettings={()=>setSettingsOpen(true)} onError={setError} suspended={settingsOpen||tab!=='movie'} onBusy={setBusy} onSaved={clip=>{add(clip);setMessage('Видео сохранено');}}/></div>}
+ {state&&movieVisited&&<div className="workspace" hidden={tab!=='movie'}><MovieWorkspace clips={clips} sourceFilters={sourceFilters} state={state} project={project} setProject={setProject} onImport={imported} onViewed={viewed} onSettings={()=>setSettingsOpen(true)} onError={setError} suspended={settingsOpen||tab!=='movie'} onBusy={setBusy} onSaved={clip=>{add(clip);setMessage('Видео сохранено');}}/></div>}
  <AlertDialog open={!!deleteTarget} onOpenChange={(open,details)=>{if(!open){if(deleting)details.cancel();else setDeleteTarget(undefined);}}}>
   <AlertDialogBackdrop className="dialog-backdrop"/>
    <AlertDialogContent className="delete-dialog">

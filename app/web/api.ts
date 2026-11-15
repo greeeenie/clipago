@@ -2,7 +2,7 @@ import {invoke, convertFileSrc} from '@tauri-apps/api/core';
 export type Encoder='Auto'|'Nvidia'|'Intel'|'Amd'|'Cpu';
 export type EditorHotkeys={split:string;duplicate:string;delete:string;snapping:string;inspector:string;export:string;undo:string;redo:string;play:string;zoom_in:string;zoom_out:string};
 export type Settings={buffer_seconds:number;fps:number;monitor:number;encoder:Encoder;output_dir:string;ffmpeg:string;ffprobe:string;shortcut:string;system_audio:boolean;microphone?:boolean;editor_hotkeys?:EditorHotkeys};
-export type Clip={path:string;duration:number;width:number;height:number;bytes:number;has_audio:boolean;audio_tracks:{index:number;name:string}[];audio_mix_index:number|null;source:string|null;game?:boolean;fps:number;aspect_ratio:number;original_path:string|null;title?:string|null;viewed:boolean;is_movie:boolean};
+export type Clip={path:string;duration:number;width:number;height:number;bytes:number;modified_at_ms?:number|null;has_audio:boolean;audio_tracks:{index:number;name:string}[];audio_mix_index:number|null;source:string|null;game?:boolean;fps:number;aspect_ratio:number;original_path:string|null;title?:string|null;viewed:boolean;is_movie:boolean};
 export type SourceFilter={name:string;icon:string|null;game:boolean};
 export type Snapshot={profile_id?:string;settings:Settings;recording:boolean;transitioning:boolean;replay_status?:'stopped'|'warming'|'ready'|'saving';encoders:Encoder[];monitors:{index:number;name:string}[];error:string|null;quick:Clip[]};
 export type Format='Mp4'|'Mkv'|'Webm'|'Gif';
@@ -41,23 +41,34 @@ export const api={
 };
 export const fileUrl=convertFileSrc;
 export const filename=(path:string)=>path.split(/[\\/]/).pop()||path;
-const replayDate=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'});
 export function clipSourceLabel(value:string|null|undefined){
   const source=value?.trim();
   return source&&source===source.toLowerCase()?source.replace(/^\p{L}/u,letter=>letter.toUpperCase()):source;
 }
-export function clipTitle(clip:Clip){
+function replayStamp(path:string){
+  const match=/^Replay_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})-(\d{3})_[a-f0-9]{4}(?:\.[^.]+)?$/i.exec(filename(path));
+  if(!match)return;
+  const [,day,hours,minutes,seconds,millis]=match;
+  // Replay filenames already store the recording's local wall time.
+  const stamp=new Date(`${day}T${hours}:${minutes}:${seconds}.${millis}Z`);
+  if(!Number.isFinite(stamp.getTime())||stamp.toISOString().slice(0,10)!==day)return;
+  return stamp;
+}
+export function localClipTime(date:Date){
+  return Date.UTC(date.getFullYear(),date.getMonth(),date.getDate(),date.getHours(),date.getMinutes(),date.getSeconds(),date.getMilliseconds());
+}
+export function clipDate(clip:Clip){
+  const replay=replayStamp(clip.original_path??clip.path);
+  return replay?.getTime()??(clip.modified_at_ms==null?undefined:localClipTime(new Date(clip.modified_at_ms)));
+}
+export function clipTitle(clip:Clip,sourceName?:string){
   if(clip.title)return clip.title;
-  const name=filename(clip.original_path??clip.path);
+  const path=clip.original_path??clip.path;
+  const stamp=replayStamp(path);
+  if(stamp)return `${sourceName??clipSourceLabel(clip.source)??'Клип'}, ${stamp.toISOString().slice(11,16)}`;
+  const name=filename(path);
   const dot=name.lastIndexOf('.');
-  const stem=dot>0?name.slice(0,dot):name;
-  const stamp=/^Replay_(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-\d{2}-\d{3}_[a-f0-9]{4}$/i.exec(stem);
-  if(!stamp)return stem;
-  const [,day,hours,minutes]=stamp;
-  // Capture names store local wall time. Format that date without shifting it to another day.
-  const date=new Date(`${day}T${hours}:${minutes}:00Z`);
-  if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==day)return stem;
-  return `${clipSourceLabel(clip.source)||'Клип'} — ${replayDate.format(date)}, ${hours}:${minutes}`;
+  return dot>0?name.slice(0,dot):name;
 }
 export function time(value:number,precise=false){const ms=Math.max(0,Math.round(value*1000));const base=`${Math.floor(ms/60000).toString().padStart(2,'0')}:${Math.floor(ms/1000%60).toString().padStart(2,'0')}`;return precise?`${base}.${(ms%1000).toString().padStart(3,'0')}`:base;}
 export const snapBuffer=(n:number)=>Math.round(Math.max(30,Math.min(120,n))/5)*5;

@@ -119,6 +119,7 @@ pub struct Clip {
     pub width: u32,
     pub height: u32,
     pub bytes: u64,
+    pub modified_at_ms: Option<u64>,
     pub has_audio: bool,
     pub audio_tracks: Vec<AudioTrack>,
     pub audio_mix_index: Option<u32>,
@@ -273,6 +274,12 @@ pub fn probe(ffprobe: &str, path: &Path) -> Result<Clip> {
                 }),
         })
         .collect();
+    let metadata = fs::metadata(path)?;
+    let modified_at_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_millis() as u64);
     Ok(Clip {
         original_path: None,
         title: None,
@@ -282,7 +289,8 @@ pub fn probe(ffprobe: &str, path: &Path) -> Result<Clip> {
         duration,
         width: video.width.unwrap_or(0),
         height: video.height.unwrap_or(0),
-        bytes: fs::metadata(path)?.len(),
+        bytes: metadata.len(),
+        modified_at_ms,
         audio_tracks,
         audio_mix_index,
         has_audio: data
