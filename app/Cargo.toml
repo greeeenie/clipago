@@ -1,6 +1,6 @@
 [package]
 name = "rewind"
-version = "0.3.28"
+version = "0.3.29"
 edition = "2024"
 description = "A small Windows replay buffer and video clip editor"
 license = "MIT"

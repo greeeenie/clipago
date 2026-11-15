@@ -20,8 +20,15 @@ const window=getCurrentWindow();const quick=new URLSearchParams(location.search)
 function Titlebar({tab,busy,onTab,onSettings,updateAvailable}:{tab:'clips'|'movie';busy:boolean;onTab:(tab:'clips'|'movie')=>void;onSettings:()=>void;updateAvailable:boolean}){
  return <header className={`titlebar ${quick?'quick-titlebar':''}`}>{quick?<span className="quick-window-title">Быстрый клип</span>:<nav className="workspace-tabs" role="tablist" aria-label="Рабочее пространство"><button role="tab" disabled={busy} aria-selected={tab==='clips'} onClick={()=>onTab('clips')}>Клипы</button><button role="tab" disabled={busy} aria-selected={tab==='movie'} onClick={()=>onTab('movie')}>Монтаж</button><IconButton label="Настройки" hint={updateAvailable?"Доступно обновление":"Настройки"} className="icon-button settings-trigger" onClick={onSettings}><Settings size={16}/>{updateAvailable&&<span className="update-dot" aria-label="Доступно обновление"/>}</IconButton></nav>}<div className="titlebar-drag" data-tauri-drag-region/><div className="window-actions">{!quick&&<><button aria-label="Свернуть" onClick={()=>void window.minimize()}><Minus size={13}/></button><button aria-label="Развернуть" onClick={()=>void window.toggleMaximize()}><Square size={11}/></button></>}<button className="window-close" aria-label="Закрыть" onClick={()=>void window.close()}><X size={15}/></button></div></header>;
 }
+function ClipCopyActions({disabled,onCopy,onDiscord}:{disabled:boolean;onCopy:()=>void;onDiscord:()=>void}){
+ return <>
+  <IconButton label="Скопировать в буфер обмена" disabled={disabled} onClick={onCopy}><Copy size={17}/></IconButton>
+  <IconButton label={`Скопировать для Discord · до ${discordSizeMb} МБ`} disabled={disabled} onClick={onDiscord}><span className="discord-icon" aria-hidden="true"/></IconButton>
+ </>;
+}
 export function App(){
  const [state,setState]=useState<Snapshot>();const [clips,setClips]=useState<Clip[]>([]);const [selected,setSelected]=useState<Clip>();const [selection,setSelection]=useState<Selection>({start:0,end:0,cursor:0});const [config,setConfig]=useState<ExportConfig>();
+ const [libraryStatus,setLibraryStatus]=useState<'loading'|'ready'|'failed'>('loading');
  const [settingsOpen,setSettingsOpen]=useState(false);const [busy,setBusy]=useState(false);const [message,setMessage]=useState('');const [error,setError]=useState('');const [tab,setTab]=useState<'clips'|'movie'>('clips');const [movieVisited,setMovieVisited]=useState(false);const [view,setView]=useState<'library'|'editor'>('library');const [capturing,setCapturing]=useState(false);
  const updates=useAppUpdates(!quick);
  const [project,setProject]=useState<MovieProject>({name:'Новый мувик',segments:[]});const [projectKey,setProjectKey]=useState('');const projectRef=useRef({project,key:projectKey});projectRef.current={project,key:projectKey};
@@ -57,10 +64,23 @@ export function App(){
    if(!receivedState)setState(value);
    if(!quick){const key=`rewind.movie.v1:${value.profile_id??'default'}`;setProject(loadProject(key));setProjectKey(key);}
   }).catch(e=>{if(live)setError(String(e));});
-  if(!quick)void api.library().then(items=>{if(live)setClips(current=>[...current,...items.filter(item=>!current.some(c=>c.path===item.path))]);}).catch(e=>{if(live)setError(String(e));});
   if(!quick)void window.onDragDropEvent(event=>{if(event.payload.type==='drop')void api.importPaths(event.payload.paths).then(items=>{items.forEach(add);if(items[0])select(items[0]);}).catch(e=>setError(String(e)));}).then(fn=>live?off.push(fn):fn());
   return()=>{live=false;off.forEach(fn=>fn());};
  },[add,remove,select,update]);
+ useEffect(()=>{
+  if(quick||libraryStatus!=='loading')return;
+  let live=true;
+  void api.library().then(items=>{
+   if(!live)return;
+   setClips(current=>[...current,...items.filter(item=>!current.some(c=>c.path===item.path))]);
+   setLibraryStatus('ready');
+  }).catch(e=>{
+   if(!live)return;
+   setError(String(e));
+   setLibraryStatus('failed');
+  });
+  return()=>{live=false;};
+ },[libraryStatus]);
  const recordedSources=useMemo(()=>[...new Set(clips.filter(c=>!c.is_movie&&c.source?.trim()).map(c=>JSON.stringify([c.source,!!c.game])))].sort().join('\n'),[clips]);
  const newestClip=clips[0]?.path;
  useEffect(()=>{
@@ -99,8 +119,11 @@ export function App(){
    }
    const output=mode==='discord'?withPreset(config,'discord',selected):config;
    const saved=await api.export(selected,selection.start,selection.end,output,quick?clipName.trim():undefined,mode!=='save');
-   if(saved&&!quick){add(saved);select(saved,hardware);setMessage('Копия сохранена');}
-   if(saved&&mode==='discord')setMessage('Видео для Discord скопировано');
+   if(!saved)return;
+   if(!quick)add(saved);
+   if(mode==='save'&&!quick){select(saved,hardware);setMessage('Копия сохранена');}
+   if(mode==='discord')setMessage('Видео для Discord скопировано');
+   if(mode==='copy')setMessage('Клип скопирован');
   }catch(e){setError(String(e));}
   finally{saving.current=false;setBusy(false);}
  },[selected,config,busy,hardware,selection,clipName,add,select]);
@@ -147,8 +170,9 @@ export function App(){
  const sourceFilter=sourceOptions.some(option=>option.value===requestedSource)?requestedSource:'all';
  const visibleItems=useMemo(()=>sourceFilter==='all'?library:library.filter(item=>sources.keys.get(item.key)===sourceFilter),[library,sources.keys,sourceFilter]);
  const items=useMemo(()=>quick?pending?.map(clip=>({key:clip.path,clip,versions:[clip]}))??[]:visibleItems,[pending,visibleItems]);
- const index=rootPath?items.findIndex(item=>item.key===rootPath):-1;
- const versions=(items[index]??(rootPath?library.find(item=>item.key===rootPath):undefined))?.versions??[];
+ const selectedIndex=items.findIndex(item=>item.key===selected?.path);
+ const index=selectedIndex>=0?selectedIndex:items.findIndex(item=>item.key===rootPath);
+ const versions=(items[index]??library.find(item=>item.versions.some(clip=>clip.path===selected?.path)))?.versions??[];
  const original=versions.find(clip=>!clip.original_path);
  const edited=versions.filter(clip=>clip.original_path).reverse();
  const selectedTitle=selected?clipTitle(selected.title?selected:original??selected):'';
@@ -189,11 +213,10 @@ export function App(){
   </TabsPanel>:<main className="quick-body"><div className="empty-state"><LoaderCircle size={20} className="spin"/></div></main>}
   <footer className="quick-footer">{busy?action:<div className="quick-save-row">
    {action}
-   <IconButton label="Скопировать в буфер обмена" disabled={!selected} onClick={()=>void saveClip('copy')}><Copy size={17}/></IconButton>
-   <IconButton label={`Скопировать для Discord · до ${discordSizeMb} МБ`} disabled={!selected} onClick={()=>void saveClip('discord')}><span className="quick-discord-icon" aria-hidden="true"/></IconButton>
+   <ClipCopyActions disabled={!selected} onCopy={()=>void saveClip('copy')} onDiscord={()=>void saveClip('discord')}/>
   </div>}</footer>
  </Tabs>:<>
- <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
+ <div className="workspace" hidden={tab!=='clips'}>{view==='library'?<ClipLibraryGrid items={visibleItems} status={libraryStatus} onRetry={()=>{setError('');setLibraryStatus('loading');}} sourceFilter={sourceFilter} sourceOptions={sourceOptions} onSourceFilter={value=>{scrollPosition.current=0;setSourceFilter(value);}} onOpen={openClip} onCopy={copyClip} onDelete={setDeleteTarget} onImport={imported} onCapture={()=>void capture()} onError={setError} state={capturing&&state?{...state,replay_status:'saving'}:state} scrollPosition={scrollPosition}/>:selected&&config&&state?<div className="main-layout">
   <main className="main-editor">
    <header className="editor-header">
     <IconButton label="Назад к клипам" disabled={busy} onClick={()=>setView('library')}><ArrowLeft size={17}/></IconButton>
@@ -216,6 +239,7 @@ export function App(){
       return <button key={clip.path} disabled={busy} title={title} className={clip.path===selected.path?'active':''} aria-pressed={clip.path===selected.path} onClick={()=>openClip(clip)}>{title}</button>;
      })}
     </div>}
+    <div className="clip-copy-actions"><ClipCopyActions disabled={busy} onCopy={()=>void saveClip('copy')} onDiscord={()=>void saveClip('discord')}/></div>
     <IconButton label="Удалить клип" disabled={busy} onClick={()=>setDeleteTarget(selected)}><Trash2 size={16}/></IconButton>
    </header>
    <Editor clip={selected} playHotkey={state.settings.editor_hotkeys?.play} audioTracks={config.audioTracks} selection={selection} onChange={setSelection} busy={busy} suspended={settingsOpen||!!deleteTarget||tab!=='clips'} navigation={navigation} onViewed={()=>viewed(selected)}/>

@@ -1,7 +1,7 @@
 import {useLayoutEffect,useRef,useState,type RefObject} from 'react';
 import {Menu,MenuContextTrigger,MenuContent,MenuItem} from '@ui-sdk/react/menu';
 import {Dialog,DialogBackdrop,DialogContent,DialogTitle,DialogClose} from '@ui-sdk/react/dialog';
-import {Check,Copy,Film,FolderOpen,Layers2,Play,Plus,Trash2,Video,X,Zap} from 'lucide-react';
+import {Check,Copy,Film,FolderOpen,Layers2,LoaderCircle,Play,Plus,Trash2,Video,X,Zap} from 'lucide-react';
 import {api,clipTitle,time,type Clip,type Snapshot} from './api';
 import {clipGroups} from './projectState';
 import {Thumbnail,Select,type SelectOption} from './components';
@@ -9,9 +9,12 @@ import {Thumbnail,Select,type SelectOption} from './components';
 type LibraryItem={key:string;clip:Clip;versions:Clip[];source?:string};
 export function libraryItems(clips:Clip[]):LibraryItem[]{
  return [
-  ...clipGroups(clips).map(group=>{
-   const versions=[...(group.raw?[group.raw]:[]),...group.edited];
-   return {key:group.path,clip:versions[0],versions,source:versions.find(clip=>clip.source?.trim())?.source?.trim()};
+  ...clipGroups(clips).flatMap(({path,raw,edited})=>{
+   const versions=raw?[raw,...edited]:edited;
+   const source=versions.find(clip=>clip.source?.trim())?.source?.trim();
+   const unnamed=raw??edited.find(clip=>!clip.title);
+   const named=edited.filter(clip=>clip.title).map(clip=>({key:clip.path,clip,versions,source}));
+   return unnamed?[{key:path,clip:unnamed,versions,source},...named]:named;
   }),
   ...clips.filter(clip=>clip.is_movie).map(clip=>({key:clip.path,clip,versions:[clip]})),
  ];
@@ -49,9 +52,9 @@ function Cards({items,onOpen,onCopy,onDelete,picking=false,chosen=[],onToggle}:{
   </Menu>;
  })}</div>;
 }
-export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter,onOpen,onCopy,onDelete,onImport,onCapture,onError,state,scrollPosition}:{items:LibraryItem[];sourceFilter:string;sourceOptions:SelectOption[];onSourceFilter:(value:string)=>void;onOpen:(c:Clip)=>void;onCopy:(c:Clip)=>void;onDelete:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
+export function ClipLibraryGrid({items,status,onRetry,sourceFilter,sourceOptions,onSourceFilter,onOpen,onCopy,onDelete,onImport,onCapture,onError,state,scrollPosition}:{items:LibraryItem[];status:'loading'|'ready'|'failed';onRetry:()=>void;sourceFilter:string;sourceOptions:SelectOption[];onSourceFilter:(value:string)=>void;onOpen:(c:Clip)=>void;onCopy:(c:Clip)=>void;onDelete:(c:Clip)=>void;onImport:()=>void;onCapture:()=>void;onError:(e:string)=>void;state?:Snapshot;scrollPosition:RefObject<number>}){
  const host=useRef<HTMLDivElement>(null);useLayoutEffect(()=>{if(host.current)host.current.scrollTop=scrollPosition.current;},[scrollPosition,sourceFilter]);
- const count=items.length;const status=state?.replay_status??(state?.transitioning?'warming':state?.recording?'ready':'stopped');const captureLabel=status==='saving'?'Сохранение…':status==='warming'?'Подготовка…':status==='ready'?'Сохранить момент':'Включить запись';
+ const count=items.length;const replayStatus=state?.replay_status??(state?.transitioning?'warming':state?.recording?'ready':'stopped');const captureLabel=replayStatus==='saving'?'Сохранение…':replayStatus==='warming'?'Подготовка…':replayStatus==='ready'?'Сохранить момент':'Включить запись';
  return <main className="library-page">
   <header className="page-header">
    <div className="library-title">
@@ -64,13 +67,16 @@ export function ClipLibraryGrid({items,sourceFilter,sourceOptions,onSourceFilter
    </div>
   </header>
   <div className="library-scroll" ref={host} onScroll={e=>{scrollPosition.current=e.currentTarget.scrollTop;}}>
-   {count?<Cards items={items} onOpen={onOpen} onCopy={onCopy} onDelete={onDelete}/>:<div className="empty-library">
+   {count?<Cards items={items} onOpen={onOpen} onCopy={onCopy} onDelete={onDelete}/>
+   :status==='loading'?<div className="empty-state library-status" role="status"><LoaderCircle size={20} className="spin" aria-hidden="true"/>Загрузка клипов…</div>
+   :status==='failed'?<div className="empty-state library-status"><span>Не удалось загрузить клипы</span><button className="secondary-button" onClick={onRetry}>Повторить</button></div>
+   :<div className="empty-library">
     <div className="empty-film" aria-hidden="true"><span><Film size={28} strokeWidth={1.5}/></span></div>
     <h2>Пока нет клипов</h2>
     <div className="empty-actions">
      <button className="primary-button" onClick={onImport}><Plus size={16}/>Добавить видео</button>
-     <button className="secondary-button" onClick={onCapture} disabled={!state||status==='warming'||status==='saving'}>
-      {status==='ready'?<Zap size={16}/>:<Video size={16}/>}
+     <button className="secondary-button" onClick={onCapture} disabled={!state||replayStatus==='warming'||replayStatus==='saving'}>
+      {replayStatus==='ready'?<Zap size={16}/>:<Video size={16}/>}
       {captureLabel}
      </button>
     </div>
